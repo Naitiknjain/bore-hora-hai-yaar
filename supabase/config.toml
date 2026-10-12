@@ -1,0 +1,7 @@
+# Minimal Supabase CLI config (used by `supabase link` / `supabase db push` and local dev).
+project_id = "bore-hora-hai-yaar"
+
+[auth]
+# Guest players sign in anonymously; this must also be enabled in the hosted project
+# (Dashboard -> Authentication -> Sign In / Providers -> Allow anonymous sign-ins).
+enable_anonymous_sign_ins = true

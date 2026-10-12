@@ -1,0 +1,135 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --color-ink-950: #070b16;
+  --color-ink-900: #0b1020;
+  --color-ink-850: #0f1528;
+  --color-ink-800: #141b31;
+  --color-ink-700: #1c2540;
+  --color-ink-600: #283353;
+  --color-ink-500: #3a4670;
+  --color-ink-400: #6b7699;
+  --color-ink-300: #9aa3c0;
+  --color-ink-200: #c9cfe2;
+  --color-ink-100: #eef0f8;
+
+  --color-masala: #ffd23f;
+  --color-masala-deep: #f0b400;
+  --color-gulabi: #ff5d8f;
+  --color-pudina: #3ee08f;
+  --color-neela: #4cc9f0;
+  --color-baingan: #a77dff;
+  --color-santra: #ff8a3d;
+  --color-lal: #ff4d5e;
+
+  --animate-pop: pop 0.25s ease-out;
+  --animate-float: float 4s ease-in-out infinite;
+  --animate-shake: shake 0.35s ease-in-out;
+  --animate-fade-in: fade-in 0.2s ease-out;
+
+  @keyframes pop {
+    0% { transform: scale(0.85); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-ink-900);
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--color-ink-900);
+    color: var(--color-ink-100);
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-masala);
+    outline-offset: 2px;
+  }
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+}
+
+/* Reduced motion: respect system setting or the in-app override (data-reduced-motion on <html>). */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-reduced-motion='off']) *,
+  html:not([data-reduced-motion='off']) *::before,
+  html:not([data-reduced-motion='off']) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-reduced-motion='on'] *,
+html[data-reduced-motion='on'] *::before,
+html[data-reduced-motion='on'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Game surfaces must not scroll/zoom the page while being touched. */
+.game-surface {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: contain;
+}
+
+.bg-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+@keyframes belt {
+  to { stroke-dashoffset: -16; }
+}
+
+/* Memory match flip */
+.flip-card { perspective: 700px; }
+.flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.35s ease;
+  transform-style: preserve-3d;
+}
+.flip-inner.is-flipped { transform: rotateY(180deg); }
+.flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-back { transform: rotateY(180deg); }
+
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
