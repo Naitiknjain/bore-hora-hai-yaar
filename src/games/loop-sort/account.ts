@@ -153,7 +153,7 @@ export function useLoopAccount() {
   const flush = useCallback((): Promise<void> => {
     if (!isOnlineMode) return Promise.resolve()
     if (inflight.current) return inflight.current
-    inflight.current = (async () => {
+    const run = (async () => {
       try {
         // loop until the queue is drained, so callers awaiting flush() see every event applied
         for (;;) {
@@ -171,11 +171,14 @@ export function useLoopAccount() {
         }
       } catch (err) {
         if (!(err instanceof ApiError && err.code === 'network')) setError('Could not reach the Loop Sort server - playing with your last known lives.')
-      } finally {
-        inflight.current = null
       }
     })()
-    return inflight.current
+    // assign first, clear after: a synchronous finish must never leave the marker stuck
+    inflight.current = run
+    void run.finally(() => {
+      if (inflight.current === run) inflight.current = null
+    })
+    return run
   }, [isOnlineMode, key, publish, saveQueue])
 
   useEffect(() => {

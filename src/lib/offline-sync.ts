@@ -76,37 +76,42 @@ export function recordResult(opts: RecordOptions): StoredResult | null {
 /** Pushes pending results for the current registered player. Safe to call often. */
 export function syncPending(): Promise<void> {
   if (syncing) return syncing
-  syncing = (async () => {
+  // Note: the body can finish synchronously (e.g. not registered yet). Clear the in-flight
+  // marker *after* assigning it, otherwise a synchronous exit would leave it set forever
+  // and block every later sync.
+  const run = runSync()
+  syncing = run
+  void run.finally(() => {
+    if (syncing === run) syncing = null
+  })
+  return run
+}
+
+async function runSync(): Promise<void> {
+  if (!backendConfigured || !currentPlayer?.registered) return
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+  const playerId = currentPlayer.id
+  const pending = getResults().filter((r) => r.status === 'pending' && r.playerKey === playerId)
+  for (const item of pending) {
     try {
-      if (!backendConfigured || !currentPlayer?.registered) return
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return
-      const playerId = currentPlayer.id
-      const pending = getResults().filter((r) => r.status === 'pending' && r.playerKey === playerId)
-      for (const item of pending) {
-        try {
-          await rpc('submit_score', {
-            p_submission_id: item.submissionId,
-            p_game: item.gameId,
-            p_board: item.board,
-            p_metrics: item.metrics,
-            p_played_at: item.playedAt,
-            p_session_id: item.sessionId ?? null,
-          })
-          update(item.submissionId, { status: 'synced', error: undefined })
-        } catch (err) {
-          const code = err instanceof ApiError ? err.code : 'unknown'
-          if (code === 'network' || code === 'server_error' || code === 'rate_limited' || code === 'not_authenticated') {
-            // transient: stop and retry later, keeping order
-            return
-          }
-          update(item.submissionId, { status: 'rejected', error: code })
-        }
+      await rpc('submit_score', {
+        p_submission_id: item.submissionId,
+        p_game: item.gameId,
+        p_board: item.board,
+        p_metrics: item.metrics,
+        p_played_at: item.playedAt,
+        p_session_id: item.sessionId ?? null,
+      })
+      update(item.submissionId, { status: 'synced', error: undefined })
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : 'unknown'
+      if (code === 'network' || code === 'server_error' || code === 'rate_limited' || code === 'not_authenticated') {
+        // transient: stop and retry later, keeping order
+        return
       }
-    } finally {
-      syncing = null
+      update(item.submissionId, { status: 'rejected', error: code })
     }
-  })()
-  return syncing
+  }
 }
 
 function update(id: string, patch: Partial<StoredResult>) {
