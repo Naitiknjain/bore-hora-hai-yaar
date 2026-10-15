@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { CC } from './defs'
 
 interface TrackProps {
@@ -22,7 +23,7 @@ const rr = (x: number, y: number, w: number, h: number, r: number) => {
  * Raised conveyor loop: floor shadow, lit outer rim, recessed channel, inner rim lip and
  * engraved direction arrows. Pure decoration (no pointer events).
  */
-export function Track({ x, y, w, h, radius, width = 34, points }: TrackProps) {
+export const Track = memo(function Track({ x, y, w, h, radius, width = 34, points }: TrackProps) {
   const rim = width + 18
   const half = rim / 2
   // arrows halfway between consecutive belt positions, pointing in travel direction
@@ -36,7 +37,9 @@ export function Track({ x, y, w, h, radius, width = 34, points }: TrackProps) {
   return (
     <g aria-hidden style={{ pointerEvents: 'none' }}>
       {/* ground shadow under the whole loop */}
-      <rect {...rr(x - half + 4, y - half + 14, w + rim - 8, h + rim - 4, radius + half)} fill={CC.shadow} filter="url(#cc-blur-8)" />
+      <rect {...rr(x - half - 6, y - half + 6, w + rim + 12, h + rim + 18, radius + half + 8)} fill="rgba(8,3,30,0.18)" />
+      <rect {...rr(x - half - 1, y - half + 9, w + rim + 2, h + rim + 8, radius + half + 3)} fill="rgba(8,3,30,0.25)" />
+      <rect {...rr(x - half + 3, y - half + 11, w + rim - 6, h + rim, radius + half)} fill={CC.shadow} />
       {/* floor inside the loop */}
       <rect {...rr(x + half, y + half, w - rim, h - rim, Math.max(8, radius - half))} fill="url(#cc-floor)" />
       <rect {...rr(x + half, y + half, w - rim, h - rim, Math.max(8, radius - half))} fill="url(#cc-floor-dots)" />
@@ -65,4 +68,4 @@ export function Track({ x, y, w, h, radius, width = 34, points }: TrackProps) {
       ))}
     </g>
   )
-}
+})

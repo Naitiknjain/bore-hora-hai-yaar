@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { ArtDefs } from './art/defs'
 import { Track } from './art/Track'
 import { beltLayout, isLocked, TRUCK_CAPACITY, type LoopState, type Side } from './logic'
@@ -163,7 +164,8 @@ interface Props {
 }
 
 export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightTrucks, justAdded, onTruck }: Props) {
-  const g = boardGeometry(state.trucks.length)
+  // geometry depends only on the number of docks: compute once so static layers never re-render
+  const g = useMemo(() => boardGeometry(state.trucks.length), [state.trucks.length])
   const { pts, topY, bottomY, height } = g
   return (
     <svg viewBox={`0 0 ${BOARD_W} ${height}`} className="game-surface mx-auto block max-h-[min(60dvh,calc(100dvh-352px))] min-h-[240px] w-full" role="group" aria-label="Chakkar Cubes board">
