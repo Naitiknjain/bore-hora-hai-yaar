@@ -247,12 +247,13 @@ export const GAMES: GameMeta[] = [
     component: lazy(() => import('./typing-racer')),
   },
   {
+    // display name only: the id stays 'loop-sort' so saved progress, links and server data keep working
     id: 'loop-sort',
-    name: 'Loop Sort',
-    tagline: 'Truck khaali, belt pe daali',
-    description: 'Tap trucks to drop their cubes on the looping conveyor and let them sort into matching trucks - without clogging the belt.',
+    name: 'Chakkar Cubes',
+    tagline: 'Truck se belt, belt se truck',
+    description: 'Tap trucks to send their cubes round the conveyor and let them drop into matching trucks - without running out of space.',
     category: 'Puzzle',
-    tags: ['sort', 'colours', 'levels'],
+    tags: ['sort', 'colours', 'levels', 'conveyor', 'trucks'],
     players: '1',
     colors: { from: '#7b4dff', to: '#2a1a6e', accent: '#ffd23f' },
     emoji: '🚚',

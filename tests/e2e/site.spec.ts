@@ -94,3 +94,45 @@ test.describe('site', () => {
     await expect(page).toHaveURL(/memory-match/)
   })
 })
+
+test.describe('chakkar cubes', () => {
+  test('four abilities (no Hint), conveyor never exceeds capacity, Out of Space -> Continue -> Give Up', async ({ page }) => {
+    await seedPlayer(page)
+    await page.goto('/games/loop-sort')
+    await expect(page.getByRole('heading', { name: 'Chakkar Cubes' }).first()).toBeVisible()
+    await page.getByRole('button', { name: /^Level \d+$/ }).click()
+    for (const name of ['Undo', 'Shuffle', 'Extra Truck', '+1 Slot']) await expect(page.getByRole('button', { name: `${name}, 2 left`, exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Hint/ })).toHaveCount(0)
+    const trucks = page.locator('svg[aria-label="Chakkar Cubes board"] g[role=button]')
+    const counter = page.getByTestId('conveyor-count')
+    const outOfSpace = page.getByRole('dialog', { name: 'Out of Space' })
+    const won = page.getByRole('dialog', { name: 'Level complete' })
+    let sawOutOfSpace = false
+    for (let i = 0; i < 80; i += 1) {
+      const n = await trucks.count()
+      await trucks.nth((i * 3) % n).dispatchEvent('click')
+      const [used, cap] = (await counter.innerText()).trim().split('/').map(Number)
+      expect(used).toBeLessThanOrEqual(cap)
+      if (await outOfSpace.isVisible()) {
+        sawOutOfSpace = true
+        break
+      }
+      if (await won.isVisible()) break
+    }
+    if (sawOutOfSpace) {
+      await outOfSpace.getByRole('button', { name: /^Continue/ }).click()
+      await expect(outOfSpace).toBeHidden()
+      // a second Out of Space offers no free continue; give up ends the attempt
+      for (let i = 0; i < 120 && !(await outOfSpace.isVisible()) && !(await won.isVisible()); i += 1) {
+        await trucks.nth((i * 5) % (await trucks.count())).dispatchEvent('click')
+      }
+      if (await outOfSpace.isVisible()) {
+        await expect(outOfSpace.getByRole('button', { name: /^Continue/ })).toHaveCount(0)
+        await outOfSpace.getByRole('button', { name: /^Give Up/ }).click()
+        await expect(page.getByRole('dialog', { name: 'Attempt over' })).toBeVisible()
+        await expect(page.getByText('You lost a life. 4 left.')).toBeVisible()
+      }
+    }
+    await expectNoHorizontalOverflow(page)
+  })
+})

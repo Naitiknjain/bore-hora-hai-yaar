@@ -1,4 +1,4 @@
-import { ArrowLeft, Boxes, Check, Heart, Infinity as InfinityIcon, Lightbulb, Lock, Maximize2, Play, RotateCcw, Shield, ShieldOff, Undo2 } from 'lucide-react'
+import { ArrowLeft, Boxes, Check, Heart, Infinity as InfinityIcon, Lock, Play, Plus, RotateCcw, Shield, ShieldOff, Shuffle, Truck as TruckIcon, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog, Modal } from '../../components/ui/Modal'
@@ -8,16 +8,16 @@ import { formatDuration } from '../../lib/scoring'
 import { sfx } from '../../lib/sound'
 import { ApiError, friendlyError } from '../../lib/supabase'
 import { useLoopAccount } from './account'
+import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, applyAbility, type Attempt } from './attempt'
 import { BLOCK_NAMES, LoopBoard, type BeltItem } from './Board'
+import { ABILITY_LABELS, CHAKKAR_CONFIG, continuesLeft, usesLeft, type AbilityId } from './config'
 import levelsData from './levels.json'
-import { beltCount, canTap, initialState, isJammed, isWon, solveDepthFirst, tap, tick, type LevelDef, type LoopState, type TapError } from './logic'
+import { beltCount, canShuffle, nextSpareDock, tick, type LevelDef, type LoopState } from './logic'
 
 const LEVELS = levelsData as LevelDef[]
 const TICK_MS = 110
-const NORMAL_ABILITY_USES = 1
 
 type Screen = 'home' | 'levels' | 'play'
-type Outcome = null | 'won' | 'jammed'
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now())
@@ -51,18 +51,9 @@ function HappyTruck() {
 }
 
 function Title() {
-  const letters = [
-    ['L', '#ffd23f'],
-    ['O', '#ff4d5e'],
-    ['O', '#3ee08f'],
-    ['P', '#4cc9f0'],
-  ]
-  const letters2 = [
-    ['S', '#ff8a3d'],
-    ['O', '#ffd23f'],
-    ['R', '#ff5d8f'],
-    ['T', '#3ee08f'],
-  ]
+  const palette = ['#ffd23f', '#ff4d5e', '#3ee08f', '#4cc9f0', '#ff8a3d', '#ff5d8f', '#b06bff']
+  const letters = [...'CHAKKAR'].map((ch, i) => [ch, palette[i % palette.length]])
+  const letters2 = [...'CUBES'].map((ch, i) => [ch, palette[(i + 3) % palette.length]])
   const row = (ls: string[][]) => (
     <span className="flex justify-center gap-0.5">
       {ls.map(([ch, c], i) => (
@@ -73,7 +64,7 @@ function Title() {
     </span>
   )
   return (
-    <h2 className="font-display text-6xl font-extrabold leading-[0.9] drop-shadow-[0_6px_0_rgba(20,10,60,0.6)] sm:text-7xl" aria-label="Loop Sort">
+    <h2 className="font-display text-5xl font-extrabold leading-[0.95] drop-shadow-[0_6px_0_rgba(20,10,60,0.6)] min-[380px]:text-6xl sm:text-7xl" aria-label="Chakkar Cubes">
       {row(letters)}
       {row(letters2)}
     </h2>
@@ -111,25 +102,26 @@ export default function LoopSort() {
   const [modeMsg, setModeMsg] = useState<string | null>(null)
   const [switching, setSwitching] = useState(false)
 
-  // --- play state ---
+  // --- play state (rules live in attempt.ts; this component animates and records results) ---
   const [level, setLevel] = useState<LevelDef | null>(null)
-  const [board, setBoard] = useState<LoopState | null>(null)
+  const [attempt, setAttempt] = useState<Attempt | null>(null)
   const [items, setItems] = useState<BeltItem[]>([])
-  const [outcome, setOutcome] = useState<Outcome>(null)
-  const [tapped, setTapped] = useState(false)
   const [shake, setShake] = useState<number | null>(null)
-  const [hintTruck, setHintTruck] = useState<number | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [uses, setUses] = useState({ undo: 0, space: 0, hint: 0 })
+  const [shuffleMode, setShuffleMode] = useState(false)
+  const [justAdded, setJustAdded] = useState<number | null>(null)
   const [confirm, setConfirm] = useState<null | 'restart' | 'leave'>(null)
-  const history = useRef<LoopState[]>([])
   const nextId = useRef(1)
   const idle = useRef(0)
-  const boardRef = useRef<LoopState | null>(null)
-  boardRef.current = board
+  const recorded = useRef(false)
+  const attemptRef = useRef<Attempt | null>(null)
+  attemptRef.current = attempt
 
-  const playing = screen === 'play' && outcome === null
-  const costsLife = playing && tapped && !admin
+  const status = attempt?.status
+  const inPlay = screen === 'play' && (status === 'playing' || status === 'out-of-space' || status === 'stuck')
+  const started = !!attempt && (attempt.history.length > 0 || Object.values(attempt.used).some((n) => n > 0) || attempt.continuesUsed > 0)
+  // leaving a started, unfinished level counts as a failed attempt (Normal Mode only)
+  const costsLife = inPlay && started && !admin
   const blocker = useLeaveGuard(costsLife)
 
   const completed = useMemo(() => new Set(account.completed), [account.completed])
@@ -137,13 +129,30 @@ export default function LoopSort() {
   const unlockedUpTo = Math.min(LEVELS.length, highest + 1)
   const nextLevel = Math.min(LEVELS.length, Math.max(1, ...Array.from({ length: LEVELS.length }, (_, i) => i + 1).filter((n) => !completed.has(n)).slice(0, 1)))
   const canStartNormal = admin || account.lives > 0
-  const usesLeft = (k: keyof typeof uses) => (admin ? Infinity : NORMAL_ABILITY_USES - uses[k])
 
   const itemsFromBelt = useCallback((s: LoopState): BeltItem[] => {
     const out: BeltItem[] = []
     s.belt.forEach((c, pos) => c !== null && out.push({ id: nextId.current++, color: c, pos }))
     return out
   }, [])
+
+  /** Commits a new attempt and keeps the animated conveyor cubes in sync with its board. */
+  const commit = useCallback(
+    (prev: Attempt, next: Attempt, rebuild = false) => {
+      if (rebuild) setItems(itemsFromBelt(next.state))
+      else if (next.state.belt !== prev.state.belt) {
+        const fresh: BeltItem[] = []
+        next.state.belt.forEach((c, pos) => {
+          if (c !== null && prev.state.belt[pos] === null) fresh.push({ id: nextId.current++, color: c, pos })
+        })
+        if (fresh.length) setItems((list) => [...list, ...fresh])
+      }
+      if (next.state.belt !== prev.state.belt) idle.current = 0
+      attemptRef.current = next
+      setAttempt(next)
+    },
+    [itemsFromBelt],
+  )
 
   function startLevel(n: number) {
     const def = LEVELS[n - 1]
@@ -153,16 +162,15 @@ export default function LoopSort() {
       return
     }
     void selectLevel(n)
-    const s = initialState(def)
+    const a = startAttempt(def, admin)
     setLevel(def)
-    setBoard(s)
+    attemptRef.current = a
+    setAttempt(a)
     setItems([])
-    setOutcome(null)
-    setTapped(false)
-    setUses({ undo: 0, space: 0, hint: 0 })
-    setHintTruck(null)
     setMessage(null)
-    history.current = []
+    setShuffleMode(false)
+    setJustAdded(null)
+    recorded.current = false
     idle.current = 0
     setScreen('play')
   }
@@ -174,17 +182,19 @@ export default function LoopSort() {
     [record],
   )
 
-  // belt motor
+  // conveyor motor: runs while playing; pauses while the Out of Space / no-moves screens are open
+  const moving = screen === 'play' && status === 'playing' && !!attempt && beltCount(attempt.state) > 0
   useEffect(() => {
-    if (!playing || !board || beltCount(board) === 0) return
+    if (!moving) return
     const t = window.setInterval(() => {
-      const s = boardRef.current
-      if (!s) return
+      const a = attemptRef.current
+      if (!a || a.status !== 'playing') return
+      const s = a.state
       const r = tick(s)
       setItems((list) => {
         const moved = list.map((it) => ({ ...it, pos: (it.pos + 1) % s.belt.length }))
         if (!r.absorbed.length) return moved
-        const gone = new Set(r.absorbed.map((a) => r.state.trucks[a.truck].pos))
+        const gone = new Set(r.absorbed.map((x) => r.state.trucks[x.truck].pos))
         return moved.filter((it) => !gone.has(it.pos))
       })
       if (r.absorbed.length) {
@@ -195,94 +205,118 @@ export default function LoopSort() {
         sfx.match()
         vibrate(40)
       }
-      boardRef.current = r.state
-      setBoard(r.state)
+      const settled = beltCount(r.state) === 0 || idle.current >= s.belt.length
+      const next = afterTick(a, r.state, settled)
+      attemptRef.current = next
+      setAttempt(next)
     }, TICK_MS)
     return () => window.clearInterval(t)
-  }, [playing, board === null, board ? beltCount(board) === 0 : true]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [moving])
 
-  // outcome checks
+  // an empty conveyor is already settled: check win / no moves right away
   useEffect(() => {
-    if (!playing || !board || !level) return
-    if (isWon(board)) {
-      setOutcome('won')
+    if (!attempt || attempt.status !== 'playing' || beltCount(attempt.state) > 0) return
+    const next = afterTick(attempt, attempt.state, true)
+    if (next.status !== attempt.status) {
+      attemptRef.current = next
+      setAttempt(next)
+    }
+  }, [attempt])
+
+  // a win records the completion exactly once
+  useEffect(() => {
+    if (!attempt || !level || recorded.current) return
+    if (attempt.status === 'won') {
+      recorded.current = true
       sfx.win()
       record('complete', level.n)
-      return
     }
-    const settled = beltCount(board) === 0 || idle.current >= board.belt.length
-    if (settled && tapped && isJammed(board)) {
-      setOutcome('jammed')
-      sfx.lose()
-      vibrate([80, 40, 80])
-      if (!admin) fail(level.n)
-    }
-  }, [board, playing, level, tapped, admin, record, fail])
+  }, [attempt, level, record])
 
   function onTruck(i: number) {
-    if (!board || !playing) return
-    const err: TapError | null = canTap(board, i)
-    if (err) {
+    const a = attemptRef.current
+    if (!a || a.status !== 'playing') return
+    if (shuffleMode) {
+      if (!canShuffle(a.state, i)) {
+        sfx.miss()
+        setMessage('Pick a truck with at least two different colours to shuffle.')
+        return
+      }
+      commit(a, applyAbility(a, 'shuffle', { truck: i }))
+      setShuffleMode(false)
+      setMessage('Shuffled!')
+      sfx.flip()
+      return
+    }
+    const next = tapTruck(a, i)
+    if (next.status === 'out-of-space') {
+      sfx.lose()
+      vibrate([80, 40, 80])
+      commit(a, next)
+      return
+    }
+    if (next.refused) {
       sfx.miss()
       setShake(i)
       window.setTimeout(() => setShake(null), 400)
+      const r = next.refused.reason
       setMessage(
-        err === 'belt-full'
-          ? 'Belt is full! Wait for cubes to drop or free some space.'
-          : err === 'locked'
-            ? `Curtain closed - sort ${BLOCK_NAMES[board.trucks[i].lock ?? 0]} first.`
-            : err === 'empty'
-              ? 'This truck is empty.'
-              : 'That truck is done.',
+        r === 'locked'
+          ? `Curtain closed - sort ${BLOCK_NAMES[a.state.trucks[i].lock ?? 0]} first.`
+          : r === 'empty'
+            ? 'This truck is empty.'
+            : r === 'done'
+              ? 'That truck is done.'
+              : 'There is no room on the conveyor for these cubes.',
       )
+      commit(a, { ...next, refused: null })
       return
     }
-    history.current.push(board)
-    const r = tap(board, i)
     sfx.whoosh()
-    const fresh: BeltItem[] = []
-    r.state.belt.forEach((c, pos) => {
-      if (c !== null && board.belt[pos] === null) fresh.push({ id: nextId.current++, color: c, pos })
-    })
-    idle.current = 0
-    setItems((list) => [...list, ...fresh])
-    setBoard(r.state)
-    setTapped(true)
-    setHintTruck(null)
     setMessage(null)
+    commit(a, next)
   }
 
-  function undo() {
-    const prev = history.current.pop()
-    if (!prev || usesLeft('undo') <= 0) return
-    setUses((u) => ({ ...u, undo: u.undo + 1 }))
-    idle.current = 0
-    setBoard(prev)
-    setItems(itemsFromBelt(prev))
-    setMessage('Undone.')
-  }
-
-  function extraSpace() {
-    if (!board || usesLeft('space') <= 0) return
-    setUses((u) => ({ ...u, space: u.space + 1 }))
-    setBoard({ ...board, capacity: board.capacity + 2 })
-    setMessage('Belt extended by 2 slots for this level.')
-  }
-
-  function hint() {
-    if (!board || !level || usesLeft('hint') <= 0) return
-    if (beltCount(board) > 0 && idle.current < board.belt.length) {
-      setMessage('Wait for the belt to settle, then ask for a hint.')
+  function ability(id: AbilityId) {
+    const a = attemptRef.current
+    if (!a) return
+    if (id === 'shuffle') {
+      if (!shuffleMode && !abilityAvailable(a, 'shuffle')) return
+      setMessage(shuffleMode ? null : 'Tap a truck to shuffle its cubes.')
+      setShuffleMode(!shuffleMode)
       return
     }
-    const path = solveDepthFirst(level, 40000, board)
-    setUses((u) => ({ ...u, hint: u.hint + 1 }))
-    if (!path || !path.length) {
-      setMessage('No winning path from here - try Undo or restart.')
-      return
+    const dock = nextSpareDock(a.state)
+    const next = applyAbility(a, id)
+    if (next === a) return
+    setShuffleMode(false)
+    commit(a, next, id === 'undo')
+    if (id === 'undo') setMessage('Last tap undone.')
+    if (id === 'extraTruck') {
+      setJustAdded(dock)
+      setMessage('An empty truck joined the loop.')
     }
-    setHintTruck(path[0])
-    setMessage(`Try truck ${path[0] + 1}.`)
+    if (id === 'extraSlot') setMessage(`The conveyor now holds ${next.state.capacity} cubes.`)
+    sfx.click()
+  }
+
+  function doContinue() {
+    const a = attemptRef.current
+    if (!a) return
+    const next = continueAttempt(a)
+    if (next === a) return
+    commit(a, next)
+    setMessage(next.history.length > a.history.length ? 'Extra slot added - your move went through.' : 'Extra slot added. That move still does not fit - try another truck.')
+  }
+
+  function doGiveUp() {
+    const a = attemptRef.current
+    if (!a || !level) return
+    const next = giveUp(a)
+    attemptRef.current = next
+    setAttempt(next)
+    // existing life-loss logic: a fail event (the server ignores it in Admin Mode)
+    fail(level.n)
   }
 
   function leaveLevel(to: Screen) {
@@ -368,12 +402,13 @@ export default function LoopSort() {
         <details className="mt-5 rounded-2xl bg-black/15 p-3 text-sm text-[#e6e0ff]">
           <summary className="cursor-pointer font-semibold">How to play</summary>
           <ul className="mt-2 list-disc space-y-1 pl-5">
-            <li>Tap a truck to send its top cubes onto the looping belt.</li>
+            <li>Tap a truck to send its top group of same-coloured cubes onto the conveyor.</li>
             <li>Cubes drop into the first truck they pass that is empty or has the same colour on top.</li>
-            <li>Four of one colour completes a truck. Clear every cube to win.</li>
-            <li>The belt only holds a few loads. If it jams with nowhere to go, you lose a life.</li>
+            <li>Four of one colour completes a truck. Sort every cube to win.</li>
+            <li>The conveyor has limited space. Tap a group that does not fit and you are Out of Space.</li>
+            <li>Out of Space: one free continue (+1 slot) per attempt, or give up and lose a life.</li>
             <li>From level 6 only the top cube of each truck is visible. Curtains open when their colour is sorted.</li>
-            <li>Abilities per level: Undo, +2 belt space and a Hint (unlimited in Admin Mode).</li>
+            <li>Abilities: Undo, Shuffle, Extra Truck and +1 Slot, {CHAKKAR_CONFIG.abilitiesPerLevel.undo} each per level (unlimited in Admin Mode).</li>
           </ul>
         </details>
         <p className="mt-3 text-center text-xs text-[#c9bfff]">
@@ -453,21 +488,37 @@ export default function LoopSort() {
   }
 
   // ---------------- PLAY ----------------
-  if (!level || !board) return null
+  if (!level || !attempt) return null
+  const board = attempt.state
   const count = beltCount(board)
+  const abilities: { id: AbilityId; icon: React.ReactNode }[] = [
+    { id: 'undo', icon: <Undo2 className="size-5" /> },
+    { id: 'shuffle', icon: <Shuffle className="size-5" /> },
+    { id: 'extraTruck', icon: <TruckIcon className="size-5" /> },
+    { id: 'extraSlot', icon: <Plus className="size-5" /> },
+  ]
+  const shuffleTargets = shuffleMode ? board.trucks.map((_, i) => i).filter((i) => canShuffle(board, i)) : []
+  const leftCont = continuesLeft(attempt.continuesUsed, admin)
+  const slotUses = usesLeft('extraSlot', attempt.used.extraSlot, admin)
+  const overlay = status === 'won' || status === 'out-of-space' || status === 'stuck' || status === 'given-up'
+
   return (
     <div className={shell}>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => (costsLife ? setConfirm('leave') : setScreen('home'))}
-          aria-label="Back to Loop Sort home"
+          aria-label="Back to Chakkar Cubes home"
           className="inline-flex size-10 items-center justify-center rounded-xl bg-black/20 hover:bg-black/30"
         >
           <ArrowLeft className="size-5" />
         </button>
         <div className="rounded-full bg-black/25 px-3 py-1 font-display text-lg font-bold">Level {level.n}</div>
-        <div className="flex items-center gap-1.5 rounded-full bg-black/25 px-3 py-1 text-sm font-bold" aria-label={`Belt ${count} of ${board.capacity}`}>
+        <div
+          className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${count >= board.capacity ? 'bg-[#ff4d5e]/80' : 'bg-black/25'}`}
+          aria-label={`Conveyor ${count} of ${board.capacity} cubes`}
+          data-testid="conveyor-count"
+        >
           <Boxes className="size-4" /> {count}/{board.capacity}
         </div>
         <div className="ml-auto">
@@ -476,11 +527,25 @@ export default function LoopSort() {
       </div>
 
       <div className="relative mt-3">
-        <LoopBoard state={board} items={items} hidden={level.hidden} tickMs={TICK_MS} shakeTruck={shake} hintTruck={hintTruck} onTruck={onTruck} />
-        {outcome && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-3xl bg-[#2a1a6e]/80 p-4 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label={outcome === 'won' ? 'Level complete' : 'Belt jammed'}>
+        <LoopBoard
+          state={board}
+          items={items}
+          hidden={level.hidden}
+          tickMs={TICK_MS}
+          shakeTruck={shake}
+          highlightTrucks={shuffleTargets}
+          justAdded={justAdded}
+          onTruck={onTruck}
+        />
+        {overlay && (
+          <div
+            className="absolute inset-0 flex items-center justify-center rounded-3xl bg-[#2a1a6e]/80 p-4 backdrop-blur-sm animate-fade-in"
+            role="dialog"
+            aria-modal="true"
+            aria-label={status === 'won' ? 'Level complete' : status === 'out-of-space' ? 'Out of Space' : status === 'stuck' ? 'No moves left' : 'Attempt over'}
+          >
             <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center text-[#2a1a6e] shadow-2xl">
-              {outcome === 'won' ? (
+              {status === 'won' && (
                 <>
                   <p className="text-5xl" aria-hidden>
                     🎉
@@ -497,12 +562,60 @@ export default function LoopSort() {
                     </Button>
                   </div>
                 </>
-              ) : (
+              )}
+              {status === 'out-of-space' && attempt.pending && (
+                <>
+                  <p className="text-5xl" aria-hidden>
+                    📦
+                  </p>
+                  <p className="mt-1 font-display text-3xl font-extrabold">Out of Space!</p>
+                  <p className="mt-1 text-sm">
+                    {attempt.pending.needed === 1 ? '1 cube needs' : `${attempt.pending.needed} cubes need`} room, but the conveyor has{' '}
+                    {attempt.pending.free === 1 ? '1 free slot' : `${attempt.pending.free} free slots`}.
+                  </p>
+                  <div className="mt-4 grid gap-2">
+                    {canContinue(attempt) && (
+                      <Button onClick={doContinue} data-autofocus>
+                        Continue (+{CHAKKAR_CONFIG.slotsPerContinue} slot){admin ? '' : ` · ${leftCont} free`}
+                      </Button>
+                    )}
+                    {abilityAvailable(attempt, 'extraSlot') && (
+                      <Button variant="secondary" onClick={() => ability('extraSlot')}>
+                        Use +1 Slot ({slotUses === Infinity ? '∞' : slotUses} left)
+                      </Button>
+                    )}
+                    <Button variant="danger" onClick={doGiveUp}>
+                      Give Up{admin ? '' : ' (-1 life)'}
+                    </Button>
+                  </div>
+                </>
+              )}
+              {status === 'stuck' && (
                 <>
                   <p className="text-5xl" aria-hidden>
                     🚧
                   </p>
-                  <p className="mt-1 font-display text-3xl font-extrabold">Belt jammed!</p>
+                  <p className="mt-1 font-display text-3xl font-extrabold">No moves left</p>
+                  <p className="mt-1 text-sm">No truck can be tapped and the waiting cubes have nowhere to go.</p>
+                  <div className="mt-4 grid gap-2">
+                    {abilityAvailable(attempt, 'extraTruck') && <Button onClick={() => ability('extraTruck')}>Add an Extra Truck</Button>}
+                    {abilityAvailable(attempt, 'undo') && (
+                      <Button variant="secondary" onClick={() => ability('undo')}>
+                        Undo last tap
+                      </Button>
+                    )}
+                    <Button variant="danger" onClick={doGiveUp}>
+                      Give Up{admin ? '' : ' (-1 life)'}
+                    </Button>
+                  </div>
+                </>
+              )}
+              {status === 'given-up' && (
+                <>
+                  <p className="text-5xl" aria-hidden>
+                    💔
+                  </p>
+                  <p className="mt-1 font-display text-3xl font-extrabold">Attempt over</p>
                   <p className="mt-1 text-sm">{admin ? 'Admin Mode: no life lost.' : `You lost a life. ${account.lives} left.`}</p>
                   <div className="mt-4 grid gap-2">
                     <Button onClick={() => startLevel(level.n)} disabled={!admin && account.lives <= 0} data-autofocus>
@@ -523,25 +636,25 @@ export default function LoopSort() {
         {message}
       </p>
 
-      <div className="mt-2 grid grid-cols-4 gap-2">
-        {(
-          [
-            ['undo', 'Undo', <Undo2 key="u" className="size-5" />, undo, history.current.length === 0],
-            ['space', '+2 Space', <Maximize2 key="s" className="size-5" />, extraSpace, false],
-            ['hint', 'Hint', <Lightbulb key="h" className="size-5" />, hint, false],
-          ] as const
-        ).map(([key, label, icon, fn, disabledExtra]) => {
-          const left = usesLeft(key)
+      <div className="mt-2 grid grid-cols-5 gap-1.5 sm:gap-2">
+        {abilities.map(({ id, icon }) => {
+          const left = usesLeft(id, attempt.used[id], admin)
+          const available = abilityAvailable(attempt, id)
+          const active = id === 'shuffle' && shuffleMode
           return (
             <button
-              key={key}
+              key={id}
               type="button"
-              onClick={fn}
-              disabled={!playing || left <= 0 || disabledExtra}
-              className="relative flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-2xl bg-white/90 text-xs font-bold text-[#2a1a6e] shadow-[0_4px_0_0_rgba(0,0,0,0.25)] active:translate-y-0.5 disabled:opacity-40"
+              onClick={() => ability(id)}
+              disabled={status !== 'playing' || (!available && !active)}
+              aria-pressed={id === 'shuffle' ? shuffleMode : undefined}
+              aria-label={`${ABILITY_LABELS[id]}, ${left === Infinity ? 'unlimited' : `${left} left`}`}
+              className={`relative flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 text-[11px] font-bold leading-tight shadow-[0_4px_0_0_rgba(0,0,0,0.25)] active:translate-y-0.5 disabled:opacity-40 sm:text-xs ${
+                active ? 'bg-[#ffd23f] text-[#2a1a6e]' : 'bg-white/90 text-[#2a1a6e]'
+              }`}
             >
               {icon}
-              {label}
+              {ABILITY_LABELS[id]}
               <span className="absolute -right-1 -top-1 flex min-w-6 items-center justify-center rounded-full bg-[#ff4d5e] px-1 text-[11px] text-white">
                 {left === Infinity ? '∞' : left}
               </span>
@@ -551,7 +664,7 @@ export default function LoopSort() {
         <button
           type="button"
           onClick={() => (costsLife ? setConfirm('restart') : startLevel(level.n))}
-          className="flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-2xl bg-black/25 text-xs font-bold text-white"
+          className="flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-2xl bg-black/25 text-[11px] font-bold text-white sm:text-xs"
         >
           <RotateCcw className="size-5" />
           Restart
@@ -577,7 +690,7 @@ export default function LoopSort() {
       <ConfirmDialog
         open={blocker.state === 'blocked'}
         danger
-        title="Leave Loop Sort?"
+        title="Leave Chakkar Cubes?"
         message="Leaving a started level counts as a failed attempt and costs one life."
         confirmLabel="Leave (-1 life)"
         onConfirm={() => {

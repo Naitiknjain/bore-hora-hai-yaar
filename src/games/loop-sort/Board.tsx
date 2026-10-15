@@ -1,30 +1,37 @@
-import { beltLayout, isLocked, TRUCK_CAPACITY, type LoopState } from './logic'
+import { beltLayout, isLocked, TRUCK_CAPACITY, type LoopState, type Side } from './logic'
 
-export const BLOCK_COLORS = ['#ff4d5e', '#4d7cff', '#ffd23f', '#3ee08f', '#b06bff', '#ff8a3d']
-export const BLOCK_NAMES = ['Red', 'Blue', 'Yellow', 'Green', 'Purple', 'Orange']
+export const BLOCK_COLORS = ['#ff4d5e', '#4d7cff', '#ffd23f', '#3ee08f', '#b06bff', '#ff8a3d', '#ff5d8f', '#4cc9f0']
+export const BLOCK_NAMES = ['Red', 'Blue', 'Yellow', 'Green', 'Purple', 'Orange', 'Pink', 'Sky']
 
+export const BOARD_W = 360
 const STEP = 35
 const LEFT_X = 22
 const RIGHT_X = 338
-const TOP_Y = 26
-export const BOARD_W = 360
+const ROW_H = 104 // space for a row of upright trucks above / below the loop
+const H_TRUCK = { w: 132, h: 50 }
+const V_TRUCK = { w: 60, h: 92 }
 
-export function boardHeight(truckCount: number) {
-  const rows = Math.ceil(truckCount / 2)
-  return TOP_Y + STEP + rows * 2 * STEP + 26
-}
-
-/** Screen coordinates of every belt position (matches logic.beltLayout ordering). */
-export function beltPoints(truckCount: number): [number, number][] {
-  const rows = Math.ceil(truckCount / 2)
-  const side = rows * 2
-  const bottomY = TOP_Y + STEP * (side + 1)
+/** All screen geometry for a board with `truckCount` docks (matches logic.beltLayout). */
+export function boardGeometry(truckCount: number) {
+  const l = beltLayout(truckCount)
+  const topY = 26 + (l.top ? ROW_H : 0)
+  const bottomY = topY + STEP * (l.sidePoints + 1)
+  const height = bottomY + 26 + (l.bottom ? ROW_H : 0)
+  const xAt = (i: number) => LEFT_X + ((RIGHT_X - LEFT_X) * (i + 1)) / (l.topPoints + 1)
   const pts: [number, number][] = []
-  for (const x of [100, 180, 260]) pts.push([x, TOP_Y])
-  for (let i = 0; i < side; i += 1) pts.push([RIGHT_X, TOP_Y + STEP * (i + 1)])
-  for (const x of [260, 180, 100]) pts.push([x, bottomY])
-  for (let j = 0; j < side; j += 1) pts.push([LEFT_X, bottomY - STEP * (j + 1)])
-  return pts
+  for (let i = 0; i < l.topPoints; i += 1) pts.push([xAt(i), topY])
+  for (let i = 0; i < l.sidePoints; i += 1) pts.push([RIGHT_X, topY + STEP * (i + 1)])
+  for (let i = 0; i < l.topPoints; i += 1) pts.push([xAt(l.topPoints - 1 - i), bottomY])
+  for (let j = 0; j < l.sidePoints; j += 1) pts.push([LEFT_X, bottomY - STEP * (j + 1)])
+  const trucks = l.truckPos.map((p, i) => {
+    const side = l.truckSide[i]
+    const [px, py] = pts[p]
+    if (side === 'right') return { side, x: RIGHT_X - 22 - H_TRUCK.w, y: py - 25, ...H_TRUCK }
+    if (side === 'left') return { side, x: LEFT_X + 22, y: py - 25, ...H_TRUCK }
+    if (side === 'top') return { side, x: px - V_TRUCK.w / 2, y: topY - 22 - V_TRUCK.h, ...V_TRUCK }
+    return { side, x: px - V_TRUCK.w / 2, y: bottomY + 22, ...V_TRUCK }
+  })
+  return { layout: l, pts, topY, bottomY, height, trucks }
 }
 
 export interface BeltItem {
@@ -33,37 +40,49 @@ export interface BeltItem {
   pos: number
 }
 
-interface Props {
-  state: LoopState
-  items: BeltItem[]
-  hidden: boolean
-  tickMs: number
-  shakeTruck: number | null
-  hintTruck: number | null
-  onTruck: (i: number) => void
-}
-
-function Truck({ x, y, side, blocks, hidden, done, locked, lockColor, shake, hint, onClick, index }: {
+interface TruckProps {
+  index: number
+  side: Side
   x: number
   y: number
-  side: 'left' | 'right'
+  w: number
+  h: number
   blocks: number[]
   hidden: boolean
   done: boolean
+  doneColor?: number
   locked: boolean
   lockColor?: number
   shake: boolean
-  hint: boolean
+  highlight: boolean
+  justAdded: boolean
   onClick: () => void
-  index: number
-}) {
-  const w = 132
-  const h = 50
-  const cabW = 30
-  // cab points toward the belt
-  const cabX = side === 'right' ? x + w - cabW : x
-  const bedX = side === 'right' ? x : x + cabW
-  const slotW = (w - cabW - 12) / TRUCK_CAPACITY
+}
+
+function Truck({ index, side, x, y, w, h, blocks, hidden, done, doneColor, locked, lockColor, shake, highlight, justAdded, onClick }: TruckProps) {
+  const horizontal = side === 'left' || side === 'right'
+  const cab = horizontal ? 30 : 28
+  // the cab (and the top of the stack) faces the conveyor
+  const cabRect =
+    side === 'right' ? { x: x + w - cab, y: y + 4, w: cab, h: h - 12 }
+    : side === 'left' ? { x, y: y + 4, w: cab, h: h - 12 }
+    : side === 'top' ? { x: x + 4, y: y + h - cab, w: w - 8, h: cab }
+    : { x: x + 4, y, w: w - 8, h: cab }
+  const bed =
+    side === 'right' ? { x, y, w: w - cab, h: h - 8 }
+    : side === 'left' ? { x: x + cab, y, w: w - cab, h: h - 8 }
+    : side === 'top' ? { x, y, w, h: h - cab }
+    : { x, y: y + cab, w, h: h - cab }
+  const slot = (k: number) => {
+    if (horizontal) {
+      const sw = (bed.w - 12) / TRUCK_CAPACITY
+      const sx = side === 'right' ? bed.x + 6 + k * sw : bed.x + bed.w - 6 - (k + 1) * sw
+      return { x: sx + 1.5, y: bed.y + 6, w: sw - 3, h: bed.h - 12 }
+    }
+    const sh = (bed.h - 10) / TRUCK_CAPACITY
+    const sy = side === 'top' ? bed.y + 5 + k * sh : bed.y + bed.h - 5 - (k + 1) * sh
+    return { x: bed.x + 6, y: sy + 1.5, w: bed.w - 12, h: sh - 3 }
+  }
   const label = done
     ? `Truck ${index + 1}: complete`
     : locked
@@ -76,80 +95,94 @@ function Truck({ x, y, side, blocks, hidden, done, locked, lockColor, shake, hin
       aria-label={label}
       onClick={onClick}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onClick())}
-      className={`outline-none ${shake ? 'animate-shake' : ''}`}
-      style={{
-        cursor: done ? 'default' : 'pointer',
-        transform: done ? `translateX(${side === 'right' ? 220 : -220}px)` : undefined,
-        opacity: done ? 0 : 1,
-        transition: 'transform 0.7s ease-in, opacity 0.7s ease-in',
-      }}
+      className={`outline-none ${shake ? 'animate-shake' : ''} ${justAdded ? 'animate-pop' : ''}`}
+      style={{ cursor: done ? 'default' : 'pointer', transformBox: 'fill-box', transformOrigin: 'center' }}
     >
-      {hint && <rect x={x - 5} y={y - 5} width={w + 10} height={h + 10} rx={16} fill="none" stroke="#ffd23f" strokeWidth={3} className="motion-safe:animate-pulse" />}
-      {/* body */}
-      <rect x={bedX} y={y} width={w - cabW} height={h - 8} rx={10} fill="#6a45e6" stroke="#4b2fb3" strokeWidth={2} />
-      <rect x={cabX} y={y + 4} width={cabW} height={h - 12} rx={9} fill="#7d5cf0" stroke="#4b2fb3" strokeWidth={2} />
-      <rect x={cabX + (side === 'right' ? 10 : 4)} y={y + 10} width={16} height={12} rx={3} fill="#bfe9ff" />
-      <circle cx={x + 26} cy={y + h - 6} r={7} fill="#1c2540" />
-      <circle cx={x + w - 26} cy={y + h - 6} r={7} fill="#1c2540" />
-      <circle cx={x + 26} cy={y + h - 6} r={2.5} fill="#9aa3c0" />
-      <circle cx={x + w - 26} cy={y + h - 6} r={2.5} fill="#9aa3c0" />
-      {/* slots: bottom of the stack is far from the belt, top is nearest */}
+      {highlight && <rect x={x - 5} y={y - 5} width={w + 10} height={h + 10} rx={16} fill="none" stroke="#ffd23f" strokeWidth={3} className="motion-safe:animate-pulse" />}
+      <rect x={bed.x} y={bed.y} width={bed.w} height={bed.h} rx={10} fill={done ? '#3b2c8a' : '#6a45e6'} stroke="#4b2fb3" strokeWidth={2} />
+      <rect x={cabRect.x} y={cabRect.y} width={cabRect.w} height={cabRect.h} rx={9} fill={done ? '#4a3a9a' : '#7d5cf0'} stroke="#4b2fb3" strokeWidth={2} />
+      <rect x={cabRect.x + cabRect.w / 2 - 7} y={cabRect.y + cabRect.h / 2 - 6} width={14} height={11} rx={3} fill="#bfe9ff" opacity={done ? 0.5 : 1} />
       {Array.from({ length: TRUCK_CAPACITY }, (_, k) => {
-        const sx = side === 'right' ? bedX + 6 + k * slotW : bedX + (w - cabW) - 6 - (k + 1) * slotW
+        const r = slot(k)
         const c = blocks[k]
         const isTop = k === blocks.length - 1
         const concealed = hidden && c !== undefined && !isTop
         return (
           <g key={k}>
-            <rect x={sx + 1.5} y={y + 6} width={slotW - 3} height={h - 20} rx={5} fill="#3b2596" />
+            <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={5} fill="#3b2596" />
             {c !== undefined && (
               <>
-                <rect x={sx + 2.5} y={y + 7} width={slotW - 5} height={h - 22} rx={4} fill={concealed ? '#2a1a6e' : BLOCK_COLORS[c]} />
+                <rect x={r.x + 1} y={r.y + 1} width={r.w - 2} height={r.h - 2} rx={4} fill={concealed ? 'url(#hiddenCube)' : BLOCK_COLORS[c]} />
                 {concealed ? (
-                  <text x={sx + slotW / 2} y={y + 24} textAnchor="middle" fontSize={14} fontWeight={800} fill="#a59ae0">
+                  <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 5} textAnchor="middle" fontSize={13} fontWeight={800} fill="#d9d1ff">
                     ?
                   </text>
                 ) : (
-                  <rect x={sx + 5} y={y + 9} width={slotW - 10} height={4} rx={2} fill="rgba(255,255,255,0.45)" />
+                  <rect x={r.x + 3} y={r.y + 3} width={Math.max(2, r.w - 6)} height={3.5} rx={1.75} fill="rgba(255,255,255,0.45)" />
                 )}
               </>
             )}
           </g>
         )
       })}
+      {done && (
+        <g aria-hidden>
+          <circle cx={bed.x + bed.w / 2} cy={bed.y + bed.h / 2} r={13} fill={BLOCK_COLORS[doneColor ?? 0]} stroke="#fff" strokeWidth={2.5} />
+          <path
+            d={`M ${bed.x + bed.w / 2 - 6} ${bed.y + bed.h / 2} l 4 4.5 l 8 -9`}
+            fill="none"
+            stroke="#fff"
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
+      )}
       {locked && (
         <g aria-hidden>
-          <rect x={bedX} y={y} width={w - cabW} height={h - 8} rx={10} fill="url(#curtain)" />
-          <circle cx={bedX + (w - cabW) / 2} cy={y + (h - 8) / 2} r={11} fill="#0b1020" stroke={BLOCK_COLORS[lockColor ?? 0]} strokeWidth={3} />
-          <rect x={bedX + (w - cabW) / 2 - 4} y={y + (h - 8) / 2 - 2} width={8} height={7} rx={1.5} fill={BLOCK_COLORS[lockColor ?? 0]} />
+          <rect x={bed.x} y={bed.y} width={bed.w} height={bed.h} rx={10} fill="url(#curtain)" />
+          <circle cx={bed.x + bed.w / 2} cy={bed.y + bed.h / 2} r={11} fill="#0b1020" stroke={BLOCK_COLORS[lockColor ?? 0]} strokeWidth={3} />
+          <rect x={bed.x + bed.w / 2 - 4} y={bed.y + bed.h / 2 - 2} width={8} height={7} rx={1.5} fill={BLOCK_COLORS[lockColor ?? 0]} />
         </g>
       )}
     </g>
   )
 }
 
-export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, hintTruck, onTruck }: Props) {
-  const n = state.trucks.length
-  const layout = beltLayout(n)
-  const pts = beltPoints(n)
-  const H = boardHeight(n)
-  const bottomY = pts[3 + layout.rows * 2][1]
+interface Props {
+  state: LoopState
+  items: BeltItem[]
+  hidden: boolean
+  tickMs: number
+  shakeTruck: number | null
+  highlightTrucks: number[]
+  justAdded: number | null
+  onTruck: (i: number) => void
+}
+
+export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightTrucks, justAdded, onTruck }: Props) {
+  const g = boardGeometry(state.trucks.length)
+  const { pts, topY, bottomY, height } = g
   return (
-    <svg viewBox={`0 0 ${BOARD_W} ${H}`} className="game-surface mx-auto block max-h-[64dvh] w-full" role="group" aria-label="Loop Sort board">
+    <svg viewBox={`0 0 ${BOARD_W} ${height}`} className="game-surface mx-auto block max-h-[min(60dvh,calc(100dvh-352px))] min-h-[240px] w-full" role="group" aria-label="Chakkar Cubes board">
       <defs>
         <pattern id="curtain" width="8" height="8" patternUnits="userSpaceOnUse">
           <rect width="8" height="8" fill="#c0265a" />
           <rect width="4" height="8" fill="#e23b73" />
         </pattern>
+        <pattern id="hiddenCube" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="6" height="6" fill="#2a1a6e" />
+          <rect width="3" height="6" fill="#3a2a8e" />
+        </pattern>
       </defs>
       {/* conveyor loop */}
-      <rect x={LEFT_X} y={TOP_Y} width={RIGHT_X - LEFT_X} height={bottomY - TOP_Y} rx={34} fill="none" stroke="#3b2596" strokeWidth={30} />
-      <rect x={LEFT_X} y={TOP_Y} width={RIGHT_X - LEFT_X} height={bottomY - TOP_Y} rx={34} fill="none" stroke="#5a3fd0" strokeWidth={22} />
+      <rect x={LEFT_X} y={topY} width={RIGHT_X - LEFT_X} height={bottomY - topY} rx={34} fill="none" stroke="#3b2596" strokeWidth={30} />
+      <rect x={LEFT_X} y={topY} width={RIGHT_X - LEFT_X} height={bottomY - topY} rx={34} fill="none" stroke="#5a3fd0" strokeWidth={22} />
       <rect
         x={LEFT_X}
-        y={TOP_Y}
+        y={topY}
         width={RIGHT_X - LEFT_X}
-        height={bottomY - TOP_Y}
+        height={bottomY - topY}
         rx={34}
         fill="none"
         stroke="#7d5cf0"
@@ -158,35 +191,32 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, hintTruck,
         className="motion-safe:[animation:belt_1s_linear_infinite]"
       />
       {/* chutes */}
-      {layout.truckPos.map((p, i) =>
-        state.trucks[i].done ? null : (
+      {g.layout.truckPos.map((p, i) =>
+        state.trucks[i].done || state.trucks[i].inactive ? null : (
           <circle key={`ch${i}`} cx={pts[p][0]} cy={pts[p][1]} r={13} fill="none" stroke={isLocked(state, state.trucks[i]) ? '#c0265a' : '#ffd23f'} strokeWidth={2} opacity={0.6} />
         ),
       )}
-      {/* trucks */}
-      {state.trucks.map((t, i) => {
-        const side = layout.truckSide[i]
-        const y = pts[layout.truckPos[i]][1] - 25
-        const x = side === 'right' ? RIGHT_X - 22 - 132 : LEFT_X + 22
-        return (
+      {/* trucks (spare docks stay hidden until Extra Truck opens them) */}
+      {state.trucks.map((t, i) =>
+        t.inactive ? null : (
           <Truck
             key={i}
             index={i}
-            x={x}
-            y={y}
-            side={side}
+            {...g.trucks[i]}
             blocks={t.blocks}
             hidden={hidden}
             done={t.done}
+            doneColor={t.doneColor}
             locked={isLocked(state, t)}
             lockColor={t.lock}
             shake={shakeTruck === i}
-            hint={hintTruck === i}
+            highlight={highlightTrucks.includes(i)}
+            justAdded={justAdded === i}
             onClick={() => onTruck(i)}
           />
-        )
-      })}
-      {/* cubes riding the belt: each block is drawn as a little pile of cubes */}
+        ),
+      )}
+      {/* cubes riding the conveyor: each conveyor cube is drawn as a little pile */}
       {items.map((it) => {
         const [x, y] = pts[it.pos]
         return (

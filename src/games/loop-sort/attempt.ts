@@ -105,7 +105,7 @@ export function abilityAvailable(a: Attempt, id: AbilityId, config: ChakkarConfi
  * Uses an ability. `truck` is required for Shuffle. Admin Mode has unlimited uses but the same
  * consistency checks (e.g. no more than 12 trucks, conveyor never larger than the loop).
  */
-export function useAbility(a: Attempt, id: AbilityId, opts: { truck?: number; rand?: () => number } = {}, config: ChakkarConfig = CHAKKAR_CONFIG): Attempt {
+export function applyAbility(a: Attempt, id: AbilityId, opts: { truck?: number; rand?: () => number } = {}, config: ChakkarConfig = CHAKKAR_CONFIG): Attempt {
   if (!abilityAvailable(a, id, config)) return a
   const used = { ...a.used, [id]: a.used[id] + 1 }
   switch (id) {

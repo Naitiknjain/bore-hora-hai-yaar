@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import levels from '../../src/games/loop-sort/levels.json'
 import { CHAKKAR_CONFIG, continuesLeft, usesLeft, type ChakkarConfig } from '../../src/games/loop-sort/config'
-import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, useAbility, type Attempt } from '../../src/games/loop-sort/attempt'
+import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, applyAbility, type Attempt } from '../../src/games/loop-sort/attempt'
 import { attemptTap, beltCount, beltLayout, initialState, maxCapacity, MAX_TRUCKS, replay, settle, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
 
 const LEVELS = levels as LevelDef[]
@@ -141,7 +141,7 @@ describe('conveyor capacity and the Out of Space rule', () => {
 
   it('the +1 Slot ability can also rescue an Out of Space screen without using the continue', () => {
     const a = tapTruck(play(startAttempt(lvl([[5, 1, 1], [2, 3], [3, 2]], 2), false), 0), 1)
-    const r = useAbility(a, 'extraSlot')
+    const r = applyAbility(a, 'extraSlot')
     expect(r.status).toBe('playing')
     expect(r.used.extraSlot).toBe(1)
     expect(r.continuesUsed).toBe(0)
@@ -159,8 +159,8 @@ describe('abilities', () => {
     let a = startAttempt(lvl([[1, 2], [3]], 4), false)
     const start = a.state
     a = tapTruck(a, 0)
-    a = useAbility(a, 'extraSlot')
-    a = useAbility(a, 'undo')
+    a = applyAbility(a, 'extraSlot')
+    a = applyAbility(a, 'undo')
     expect(a.state.trucks.map((t) => t.blocks)).toEqual(start.trucks.map((t) => t.blocks))
     expect(beltCount(a.state)).toBe(0)
     expect(a.state.capacity).toBe(5)
@@ -170,9 +170,9 @@ describe('abilities', () => {
 
   it('shuffle reorders one chosen truck only', () => {
     let a = startAttempt(lvl([[1, 2, 3, 1], [4, 4]], 6), false)
-    expect(useAbility(a, 'shuffle', {})).toBe(a) // no truck chosen
-    expect(useAbility(a, 'shuffle', { truck: 1 })).toBe(a) // all one colour: nothing to shuffle
-    a = useAbility(a, 'shuffle', { truck: 0, rand: () => 0.3 })
+    expect(applyAbility(a, 'shuffle', {})).toBe(a) // no truck chosen
+    expect(applyAbility(a, 'shuffle', { truck: 1 })).toBe(a) // all one colour: nothing to shuffle
+    a = applyAbility(a, 'shuffle', { truck: 0, rand: () => 0.3 })
     expect(a.state.trucks[0].blocks).not.toEqual([1, 2, 3, 1])
     expect([...a.state.trucks[0].blocks].sort()).toEqual([1, 1, 2, 3])
     expect(a.state.trucks[1].blocks).toEqual([4, 4])
@@ -182,7 +182,7 @@ describe('abilities', () => {
   it('extra truck opens an empty truck, limited by the allowance and the 12-truck cap', () => {
     let a = startAttempt(lvl([[1, 2], [2, 1]], 4), false)
     expect(a.state.trucks.filter((t) => t.inactive)).toHaveLength(2)
-    a = useAbility(useAbility(a, 'extraTruck'), 'extraTruck')
+    a = applyAbility(applyAbility(a, 'extraTruck'), 'extraTruck')
     expect(a.state.trucks.filter((t) => !t.inactive)).toHaveLength(4)
     expect(abilityAvailable(a, 'extraTruck')).toBe(false)
     const full = startAttempt(lvl(Array.from({ length: 12 }, () => [1]), 6), true)
@@ -198,11 +198,11 @@ describe('abilities', () => {
   it('Normal Mode: 2 uses per ability; Admin Mode: unlimited but the conveyor never outgrows the loop', () => {
     const def = lvl([[1, 2, 1, 2], [3, 4]], 3)
     let a = startAttempt(def, false)
-    a = useAbility(useAbility(a, 'extraSlot'), 'extraSlot')
+    a = applyAbility(applyAbility(a, 'extraSlot'), 'extraSlot')
     expect(a.state.capacity).toBe(5)
-    expect(useAbility(a, 'extraSlot')).toBe(a)
+    expect(applyAbility(a, 'extraSlot')).toBe(a)
     let admin = startAttempt(def, true)
-    for (let i = 0; i < 100; i += 1) admin = useAbility(admin, 'extraSlot')
+    for (let i = 0; i < 100; i += 1) admin = applyAbility(admin, 'extraSlot')
     expect(admin.state.capacity).toBe(maxCapacity(admin.state))
   })
 })

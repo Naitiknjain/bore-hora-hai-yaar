@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "levels:generate": "node scripts/generate-loop-sort-levels.ts",
-    "check:secrets": "node scripts/check-bundle-secrets.mjs"
+    "check:secrets": "node scripts/check-bundle-secrets.mjs",
+    "dev:offline": "vite --mode offline --port 5174 --strictPort"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",

@@ -43,7 +43,7 @@ A friends-first browser gaming site: 15 original, fully playable games, guest pr
 | 11 | **Sudoku Classic** | Easy/medium/hard | Per difficulty, fastest time then fewest mistakes |
 | 12 | **Skater Boy** (inspired) | 90-level campaign (Town / Forest / Cemetery) | Levels completed, then summed best level scores |
 | 13 | **Typing Racer** | Easy/medium/hard vs 3 rival cars | Per difficulty, WPM then accuracy |
-| 14 | **Loop Sort** (inspired) | 60 levels, Normal + Admin Mode | None (see below) |
+| 14 | **Chakkar Cubes** (original conveyor-sorting puzzle) | 60 levels, Normal + Admin Mode | None (see below) |
 | 15 | **Arrow Go** (inspired) | 60 levels | Levels completed, then hearts kept |
 
 Full rules, scoring models and design notes for every game: **[docs/GAMES.md](docs/GAMES.md)**.
@@ -69,7 +69,8 @@ To enable the shared backend, copy `.env.example` to `.env.local`, fill in the t
 
 | Command | What it does |
 |---------|--------------|
-| `npm run dev` | Vite dev server |
+| `npm run dev` | Vite dev server (uses `.env.local`, i.e. your **live** Supabase if configured) |
+| `npm run dev:offline` | Dev server on port 5174 with Supabase disabled: safe local testing that never touches production data |
 | `npm run build` | Type-check (`tsc -b`) + production build into `dist/` |
 | `npm run preview` | Serve the production build (with SPA fallback) |
 | `npm run typecheck` | TypeScript only |
@@ -154,7 +155,7 @@ Alternatively with the CLI: `npx netlify deploy --build --prod` (after `npx netl
 ## Testing
 
 ```bash
-npm test            # 122 unit + integration + database tests (Vitest)
+npm test            # 144 unit + integration + database tests (Vitest)
 npm run test:e2e    # browser tests on desktop, phone and 320px widths (Playwright)
 npm run lint
 npm run build && npm run check:secrets
@@ -223,7 +224,7 @@ Every game has its own leaderboard, and each mode or difficulty is a separate bo
 | Brick Breaker | classic | best score, then wall reached |
 | Skater Boy | campaign | levels completed, then sum of best level scores |
 | Arrow Go | classic | levels completed, then hearts kept |
-| Loop Sort | - | **no leaderboard**: Admin Mode can open and complete any level, so a ranking would be meaningless |
+| Chakkar Cubes | - | **no leaderboard**: Admin Mode can open and complete any level, so a ranking would be meaningless |
 
 Local multiplayer results are never sent to leaderboards. No points are awarded for unrelated actions (e.g. Ludo captures give an extra turn, not points).
 
@@ -254,7 +255,7 @@ This is a casual site; the browser runs the games, so a determined cheater can a
 
 ## What is verified and what is not
 
-- ✅ Build, type-check and lint pass; 122 Vitest tests and the Playwright suite pass locally (Windows, Edge).
+- ✅ Build, type-check and lint pass; 144 Vitest tests and the Playwright suite pass locally (Windows, Edge).
 - ✅ The SQL migrations run and behave correctly against real Postgres (PGlite) in tests.
 - ⚠️ **Not yet run against a live Supabase project.** No credentials were available while building. The schema targets standard Supabase (`auth.uid()`, `anon`/`authenticated` roles, `extensions.pgcrypto`, anonymous sign-ins), but please do one smoke test after setup: create a profile, finish a game, check its leaderboard, recover on a second browser, and try the admin PIN.
 - ⚠️ Not yet deployed to Netlify (needs your account). Config is in place, and SPA fallback was verified with `vite preview`.
