@@ -354,7 +354,8 @@ export default function LoopSort() {
     }
   }
 
-  const shell = 'mx-auto max-w-2xl overflow-hidden rounded-[2rem] bg-gradient-to-b from-[#5b3fd6] via-[#4227b0] to-[#2a1a6e] p-4 text-white sm:p-6'
+  const shell =
+    'mx-auto max-w-2xl overflow-hidden rounded-[2rem] bg-[radial-gradient(ellipse_at_50%_30%,#3d27a0_0%,#26166a_48%,#150b3f_100%)] p-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:p-6'
 
   // ---------------- HOME ----------------
   if (screen === 'home') {

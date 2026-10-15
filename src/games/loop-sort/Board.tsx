@@ -1,3 +1,5 @@
+import { ArtDefs } from './art/defs'
+import { Track } from './art/Track'
 import { beltLayout, isLocked, TRUCK_CAPACITY, type LoopState, type Side } from './logic'
 
 export const BLOCK_COLORS = ['#ff4d5e', '#4d7cff', '#ffd23f', '#3ee08f', '#b06bff', '#ff8a3d', '#ff5d8f', '#4cc9f0']
@@ -5,18 +7,18 @@ export const BLOCK_NAMES = ['Red', 'Blue', 'Yellow', 'Green', 'Purple', 'Orange'
 
 export const BOARD_W = 360
 const STEP = 35
-const LEFT_X = 22
-const RIGHT_X = 338
+const LEFT_X = 32
+const RIGHT_X = 328
 const ROW_H = 104 // space for a row of upright trucks above / below the loop
-const H_TRUCK = { w: 132, h: 50 }
+const H_TRUCK = { w: 116, h: 50 }
 const V_TRUCK = { w: 60, h: 92 }
 
 /** All screen geometry for a board with `truckCount` docks (matches logic.beltLayout). */
 export function boardGeometry(truckCount: number) {
   const l = beltLayout(truckCount)
-  const topY = 26 + (l.top ? ROW_H : 0)
+  const topY = 34 + (l.top ? ROW_H : 0)
   const bottomY = topY + STEP * (l.sidePoints + 1)
-  const height = bottomY + 26 + (l.bottom ? ROW_H : 0)
+  const height = bottomY + 44 + (l.bottom ? ROW_H : 0)
   const xAt = (i: number) => LEFT_X + ((RIGHT_X - LEFT_X) * (i + 1)) / (l.topPoints + 1)
   const pts: [number, number][] = []
   for (let i = 0; i < l.topPoints; i += 1) pts.push([xAt(i), topY])
@@ -26,10 +28,10 @@ export function boardGeometry(truckCount: number) {
   const trucks = l.truckPos.map((p, i) => {
     const side = l.truckSide[i]
     const [px, py] = pts[p]
-    if (side === 'right') return { side, x: RIGHT_X - 22 - H_TRUCK.w, y: py - 25, ...H_TRUCK }
-    if (side === 'left') return { side, x: LEFT_X + 22, y: py - 25, ...H_TRUCK }
-    if (side === 'top') return { side, x: px - V_TRUCK.w / 2, y: topY - 22 - V_TRUCK.h, ...V_TRUCK }
-    return { side, x: px - V_TRUCK.w / 2, y: bottomY + 22, ...V_TRUCK }
+    if (side === 'right') return { side, x: RIGHT_X - 30 - H_TRUCK.w, y: py - 25, ...H_TRUCK }
+    if (side === 'left') return { side, x: LEFT_X + 30, y: py - 25, ...H_TRUCK }
+    if (side === 'top') return { side, x: px - V_TRUCK.w / 2, y: topY - 30 - V_TRUCK.h, ...V_TRUCK }
+    return { side, x: px - V_TRUCK.w / 2, y: bottomY + 30, ...V_TRUCK }
   })
   return { layout: l, pts, topY, bottomY, height, trucks }
 }
@@ -165,37 +167,8 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
   const { pts, topY, bottomY, height } = g
   return (
     <svg viewBox={`0 0 ${BOARD_W} ${height}`} className="game-surface mx-auto block max-h-[min(60dvh,calc(100dvh-352px))] min-h-[240px] w-full" role="group" aria-label="Chakkar Cubes board">
-      <defs>
-        <pattern id="curtain" width="8" height="8" patternUnits="userSpaceOnUse">
-          <rect width="8" height="8" fill="#c0265a" />
-          <rect width="4" height="8" fill="#e23b73" />
-        </pattern>
-        <pattern id="hiddenCube" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <rect width="6" height="6" fill="#2a1a6e" />
-          <rect width="3" height="6" fill="#3a2a8e" />
-        </pattern>
-      </defs>
-      {/* conveyor loop */}
-      <rect x={LEFT_X} y={topY} width={RIGHT_X - LEFT_X} height={bottomY - topY} rx={34} fill="none" stroke="#3b2596" strokeWidth={30} />
-      <rect x={LEFT_X} y={topY} width={RIGHT_X - LEFT_X} height={bottomY - topY} rx={34} fill="none" stroke="#5a3fd0" strokeWidth={22} />
-      <rect
-        x={LEFT_X}
-        y={topY}
-        width={RIGHT_X - LEFT_X}
-        height={bottomY - topY}
-        rx={34}
-        fill="none"
-        stroke="#7d5cf0"
-        strokeWidth={1.5}
-        strokeDasharray="6 10"
-        className="motion-safe:[animation:belt_1s_linear_infinite]"
-      />
-      {/* chutes */}
-      {g.layout.truckPos.map((p, i) =>
-        state.trucks[i].done || state.trucks[i].inactive ? null : (
-          <circle key={`ch${i}`} cx={pts[p][0]} cy={pts[p][1]} r={13} fill="none" stroke={isLocked(state, state.trucks[i]) ? '#c0265a' : '#ffd23f'} strokeWidth={2} opacity={0.6} />
-        ),
-      )}
+      <ArtDefs />
+      <Track x={LEFT_X} y={topY} w={RIGHT_X - LEFT_X} h={bottomY - topY} radius={40} points={pts} />
       {/* trucks (spare docks stay hidden until Extra Truck opens them) */}
       {state.trucks.map((t, i) =>
         t.inactive ? null : (
