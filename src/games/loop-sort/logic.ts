@@ -3,9 +3,11 @@
  * Internal game id stays `loop-sort` so saved progress keeps working.
  *
  * Rules (from the public listing, in-game text and observed gameplay; original levels only):
- *  - Trucks hold a stack of coloured cubes (bottom -> top), 4 slots each. Up to 12 trucks sit
- *    around a looping conveyor (sides first, then top and bottom rows).
- *  - Tapping a truck sends its whole top group of same-coloured cubes onto the conveyor.
+ *  - Trucks hold a stack of coloured cubes (bottom -> top), 4 slots each. Up to 12 upright trucks
+ *    stand in rows inside and around a portrait conveyor loop (see boardLayout).
+ *  - Tapping a truck sends its whole top group of same-coloured cubes onto the conveyor. The cubes
+ *    stream out of the truck one per conveyor step (as in the reference), so every cube passes
+ *    every truck downstream - none is skipped.
  *  - The conveyor moves continuously. A cube drops into the first truck it passes that has room
  *    and is empty or has the same colour on top.
  *  - 4 cubes of one colour complete a truck (it is marked done and stays in place).
@@ -42,6 +44,8 @@ export interface Truck {
   pos: number // conveyor position this truck is attached to
   /** Spare dock reserved for the Extra Truck ability; not part of play until activated. */
   inactive?: boolean
+  /** Cubes already tapped out of this truck, waiting to drop onto the conveyor (one per step). */
+  outgoing?: number[]
 }
 
 export interface LoopState {
@@ -52,64 +56,154 @@ export interface LoopState {
 }
 
 // ---------------------------------------------------------------------------
-// Layout: a rounded-rectangle loop. Trucks go on the left/right sides (up to 3 each), then
-// in rows above and below the loop (up to 3 each) -> 12 trucks max.
-// Clockwise order: top (L->R), right (top->bottom), bottom (R->L), left (bottom->top).
+// Layout (matches the reference Level 1): a portrait rounded loop with upright trucks.
+//  - inner top row: up to 4 trucks standing inside the loop, open end up, fed by the top belt
+//  - inner bottom row: up to 4 more, open end down, fed by the bottom belt
+//  - outer rows: up to 2 above and 2 below the loop, facing it -> 12 trucks max
+// Conveyor positions are spaced evenly along the whole loop (constant speed, no jumps) and
+// every truck sits exactly on one position, so a passing cube is always offered to it.
 // ---------------------------------------------------------------------------
-export type Side = 'top' | 'right' | 'bottom' | 'left'
+export type Facing = 'up' | 'down'
+export type RowId = 'inner-top' | 'inner-bottom' | 'outer-top' | 'outer-bottom'
+
+export interface TruckSpot {
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Direction of the open end (towards the belt). */
+  facing: Facing
+  row: RowId
+  pos: number
+}
+
+export interface BoardLayout {
+  width: number
+  height: number
+  /** Belt centre line. */
+  loop: { x: number; y: number; w: number; h: number; r: number }
+  step: number
+  points: [number, number][]
+  trucks: TruckSpot[]
+}
 
 export interface BeltLayout {
-  rows: number // trucks per side column
-  top: number // trucks in the top row
-  bottom: number // trucks in the bottom row
-  topPoints: number
-  sidePoints: number
   length: number
   truckPos: number[]
-  truckSide: Side[]
-  truckSlot: number[] // index within its side
+}
+
+export const BOARD_WIDTH = 360
+const LOOP_X = 34
+const LOOP_W = BOARD_WIDTH - LOOP_X * 2
+const LOOP_R = 46
+const RIM_HALF = 26
+const STEP = 34
+const GAP = 8
+const PAD = 26 // space between the belt rim and the trucks
+
+/** Point at arc length `s` along a rounded rectangle, clockwise from the top-left straight. */
+function pointOnLoop(x: number, y: number, w: number, h: number, r: number, s: number): [number, number] {
+  const top = w - 2 * r
+  const side = h - 2 * r
+  const arc = (Math.PI * r) / 2
+  const per = 2 * top + 2 * side + 4 * arc
+  let d = ((s % per) + per) % per
+  const corner = (cx: number, cy: number, from: number, t: number): [number, number] => {
+    const a = from + (t / arc) * (Math.PI / 2)
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+  }
+  if (d < top) return [x + r + d, y]
+  d -= top
+  if (d < arc) return corner(x + w - r, y + r, -Math.PI / 2, d)
+  d -= arc
+  if (d < side) return [x + w, y + r + d]
+  d -= side
+  if (d < arc) return corner(x + w - r, y + h - r, 0, d)
+  d -= arc
+  if (d < top) return [x + w - r - d, y + h]
+  d -= top
+  if (d < arc) return corner(x + r, y + h - r, Math.PI / 2, d)
+  d -= arc
+  if (d < side) return [x, y + h - r - d]
+  d -= side
+  return corner(x + r, y + r, Math.PI, d)
+}
+
+const layoutCache = new Map<number, BoardLayout>()
+
+/** Full board geometry for `truckCount` docks (shared by the rules and the renderer). */
+export function boardLayout(truckCount: number): BoardLayout {
+  const k = Math.max(1, Math.min(MAX_TRUCKS, truckCount))
+  const cached = layoutCache.get(k)
+  if (cached) return cached
+  // one row up to 4 trucks; beyond that split evenly over two rows so trucks stay large
+  const innerTop = k <= 4 ? k : Math.ceil(Math.min(k, 8) / 2)
+  const innerBottom = Math.min(4, k - innerTop)
+  const outerTop = Math.min(2, k - innerTop - innerBottom)
+  const outerBottom = Math.min(2, k - innerTop - innerBottom - outerTop)
+  const perRow = Math.max(innerTop, innerBottom)
+  const innerW = LOOP_W - 2 * RIM_HALF - 2 * 12
+  // trucks get bigger when there are fewer of them (like the reference's first levels)
+  const tw = Math.min(92, Math.floor((innerW - (perRow - 1) * GAP) / perRow))
+  const th = Math.round(tw * 2.05)
+  const outerH = th + 30
+  const loopY = 30 + (outerTop ? outerH : 0)
+  // portrait like the reference: a single row still gets a tall loop
+  const loopH = innerBottom ? 2 * th + 2 * (RIM_HALF + PAD) + 34 : Math.max(310, th + 2 * (RIM_HALF + PAD) + 40)
+  const height = loopY + loopH + 40 + (outerBottom ? outerH : 0)
+  const loop = { x: LOOP_X, y: loopY, w: LOOP_W, h: loopH, r: LOOP_R }
+
+  const per = 2 * (LOOP_W - 2 * LOOP_R) + 2 * (loopH - 2 * LOOP_R) + 2 * Math.PI * LOOP_R
+  const n = Math.round(per / STEP)
+  const step = per / n
+  const points: [number, number][] = Array.from({ length: n }, (_, i) => pointOnLoop(loop.x, loop.y, loop.w, loop.h, loop.r, i * step))
+
+  const used = new Set<number>()
+  const nearest = (x: number, y: number) => {
+    let best = -1
+    let bestD = Infinity
+    points.forEach(([px, py], i) => {
+      if (used.has(i)) return
+      const dd = (px - x) ** 2 + (py - y) ** 2 * 4 // prefer the straight edge right next to the truck
+      if (dd < bestD) {
+        bestD = dd
+        best = i
+      }
+    })
+    used.add(best)
+    return best
+  }
+  const trucks: TruckSpot[] = []
+  const rowXs = (count: number) => {
+    const total = count * tw + (count - 1) * GAP
+    const start = LOOP_X + LOOP_W / 2 - total / 2
+    return Array.from({ length: count }, (_, j) => start + j * (tw + GAP))
+  }
+  for (const x of rowXs(innerTop)) {
+    trucks.push({ x, y: loopY + RIM_HALF + PAD, w: tw, h: th, facing: 'up', row: 'inner-top', pos: nearest(x + tw / 2, loopY) })
+  }
+  for (const x of rowXs(innerBottom)) {
+    trucks.push({ x, y: loopY + loopH - RIM_HALF - PAD - th, w: tw, h: th, facing: 'down', row: 'inner-bottom', pos: nearest(x + tw / 2, loopY + loopH) })
+  }
+  // outer trucks sit exactly over a free belt position between the inner trucks
+  const outer = (count: number, edgeY: number, facing: Facing, row: RowId, y: number) => {
+    for (let j = 0; j < count; j += 1) {
+      const wantX = LOOP_X + LOOP_W * (count === 1 ? 0.5 : j === 0 ? 0.3 : 0.7)
+      const pos = nearest(wantX, edgeY)
+      trucks.push({ x: points[pos][0] - tw / 2, y, w: tw, h: th, facing, row, pos })
+    }
+  }
+  outer(outerTop, loopY, 'down', 'outer-top', loopY - RIM_HALF - 8 - th)
+  outer(outerBottom, loopY + loopH, 'up', 'outer-bottom', loopY + loopH + RIM_HALF + 8)
+
+  const result = { width: BOARD_WIDTH, height, loop, step, points, trucks }
+  layoutCache.set(k, result)
+  return result
 }
 
 export function beltLayout(truckCount: number): BeltLayout {
-  const k = Math.max(1, Math.min(MAX_TRUCKS, truckCount))
-  const rows = Math.min(3, Math.ceil(k / 2))
-  const sideTrucks = Math.min(k, rows * 2)
-  const rest = k - sideTrucks
-  const top = Math.ceil(rest / 2)
-  const bottom = rest - top
-  const topPoints = Math.max(3, Math.max(top, bottom) * 2 + 1)
-  const sidePoints = rows * 2
-  const length = topPoints * 2 + sidePoints * 2
-  const truckPos: number[] = []
-  const truckSide: Side[] = []
-  const truckSlot: number[] = []
-  const rightCount = Math.ceil(sideTrucks / 2)
-  // first the side trucks (keeps existing small layouts identical), then top, then bottom
-  for (let i = 0; i < sideTrucks; i += 1) {
-    if (i < rightCount) {
-      truckPos.push(topPoints + i * 2 + 1)
-      truckSide.push('right')
-      truckSlot.push(i)
-    } else {
-      const r = i - rightCount
-      truckPos.push(topPoints + sidePoints + topPoints + (sidePoints - 1 - (r * 2 + 1)))
-      truckSide.push('left')
-      truckSlot.push(r)
-    }
-  }
-  const offset = (count: number) => Math.floor((topPoints - (count * 2 - 1)) / 2)
-  for (let j = 0; j < top; j += 1) {
-    truckPos.push(offset(top) + j * 2)
-    truckSide.push('top')
-    truckSlot.push(j)
-  }
-  for (let j = 0; j < bottom; j += 1) {
-    // bottom runs right -> left
-    truckPos.push(topPoints + sidePoints + (topPoints - 1 - (offset(bottom) + j * 2)))
-    truckSide.push('bottom')
-    truckSlot.push(j)
-  }
-  return { rows, top, bottom, topPoints, sidePoints, length, truckPos, truckSide, truckSlot }
+  const b = boardLayout(truckCount)
+  return { length: b.points.length, truckPos: b.trucks.map((t) => t.pos) }
 }
 
 /** Largest capacity a layout can hold while keeping free conveyor positions for movement. */
@@ -130,7 +224,11 @@ export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity'>, spare
 }
 
 export const beltCount = (s: LoopState) => s.belt.reduce((n: number, b) => (b === null ? n : n + 1), 0)
-export const freeSpace = (s: LoopState) => s.capacity - beltCount(s)
+/** Cubes tapped out of trucks that have not reached the conveyor yet. */
+export const outgoingCount = (s: LoopState) => s.trucks.reduce((n, t) => n + (t.outgoing?.length ?? 0), 0)
+/** Cubes the conveyor is committed to carry (on it now + still streaming out of trucks). */
+export const conveyorLoad = (s: LoopState) => beltCount(s) + outgoingCount(s)
+export const freeSpace = (s: LoopState) => s.capacity - conveyorLoad(s)
 export const isLocked = (s: LoopState, t: Truck) => t.lock !== undefined && !s.completed.includes(t.lock)
 
 /** Top group of identical colours (what a tap would unload). */
@@ -155,21 +253,16 @@ export function canTap(s: LoopState, i: number): TapError | null {
   return null
 }
 
-/** Unloads the top group onto the conveyor, just ahead of the truck (so it does not instantly reload). */
+/** Sends the top group out of the truck: it streams onto the conveyor one cube per step. */
 export function tap(s: LoopState, i: number): { state: LoopState; error: TapError | null } {
   const err = canTap(s, i)
   if (err) return { state: s, error: err }
   const t = s.trucks[i]
   const run = topRun(t)
-  const belt = s.belt.slice()
-  let p = t.pos
-  for (const c of run) {
-    do p = (p + 1) % belt.length
-    while (belt[p] !== null)
-    belt[p] = c
-  }
-  const trucks = s.trucks.map((x, k) => (k === i ? { ...x, blocks: x.blocks.slice(0, x.blocks.length - run.length) } : x))
-  return { state: { ...s, trucks, belt }, error: null }
+  const trucks = s.trucks.map((x, k) =>
+    k === i ? { ...x, blocks: x.blocks.slice(0, x.blocks.length - run.length), outgoing: [...(x.outgoing ?? []), ...run.slice().reverse()] } : x,
+  )
+  return { state: { ...s, trucks }, error: null }
 }
 
 export type TapOutcome =
@@ -192,7 +285,7 @@ export function attemptTap(s: LoopState, i: number, trigger: 'tap-exceeds-capaci
 }
 
 export function accepts(s: LoopState, t: Truck, color: number): boolean {
-  if (t.inactive || t.done || isLocked(s, t) || t.blocks.length >= TRUCK_CAPACITY) return false
+  if (t.inactive || t.done || isLocked(s, t) || t.outgoing?.length || t.blocks.length >= TRUCK_CAPACITY) return false
   return !t.blocks.length || t.blocks[t.blocks.length - 1] === color
 }
 
@@ -200,6 +293,7 @@ export interface TickResult {
   state: LoopState
   absorbed: { truck: number; color: number }[]
   completed: number[] // truck indices completed this tick
+  emitted: { truck: number; pos: number; color: number }[] // cubes that left a truck this tick
 }
 
 /** Moves the conveyor one position and lets trucks pick up cubes passing their chute. */
@@ -226,26 +320,36 @@ export function tick(s: LoopState): TickResult {
     }
     absorbed.push({ truck: i, color: c })
   })
-  return { state: { ...s, trucks, belt, completed }, absorbed, completed: completedNow }
+  // trucks with a pending stream drop their next cube onto their own (now empty) position;
+  // it moves on next step and is offered to every truck it passes
+  const emitted: { truck: number; pos: number; color: number }[] = []
+  trucks = trucks.map((t, i) => {
+    if (!t.outgoing?.length || belt[t.pos] !== null) return t
+    const [c, ...rest] = t.outgoing
+    belt[t.pos] = c
+    emitted.push({ truck: i, pos: t.pos, color: c })
+    return { ...t, outgoing: rest.length ? rest : undefined }
+  })
+  return { state: { ...s, trucks, belt, completed }, absorbed, completed: completedNow, emitted }
 }
 
 /** Runs the conveyor until nothing more can be absorbed (a full lap with no pick-ups) or it is empty. */
 export function settle(s: LoopState): LoopState {
   let state = s
   let idle = 0
-  while (beltCount(state) > 0 && idle < state.belt.length) {
+  while (conveyorLoad(state) > 0 && idle < state.belt.length) {
     const r = tick(state)
     state = r.state
-    idle = r.absorbed.length ? 0 : idle + 1
+    idle = r.absorbed.length || r.emitted.length ? 0 : idle + 1
   }
   return state
 }
 
-export const isWon = (s: LoopState) => beltCount(s) === 0 && s.trucks.every((t) => t.done || t.blocks.length === 0)
+export const isWon = (s: LoopState) => conveyorLoad(s) === 0 && s.trucks.every((t) => t.done || t.blocks.length === 0)
 
 /** True when blocks remain but no truck could ever be tapped (even with unlimited space). */
 export function hasNoMoves(s: LoopState): boolean {
-  if (isWon(s)) return false
+  if (isWon(s) || outgoingCount(s) > 0) return false
   return s.trucks.every((t) => t.inactive || t.done || isLocked(s, t) || t.blocks.length === 0)
 }
 
@@ -312,7 +416,7 @@ export function undoTo(previous: LoopState, current: LoopState): LoopState {
 // Solvers
 // ---------------------------------------------------------------------------
 export function stateKey(s: LoopState): string {
-  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : t.blocks.join(''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}`
+  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : t.blocks.join('') + (t.outgoing?.length ? `>${t.outgoing.join('')}` : ''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}`
 }
 
 /**
@@ -382,7 +486,7 @@ export function solveDepthFirst(level: Pick<LevelDef, 'trucks' | 'capacity'>, ma
 
 /** How far a board is from sorted: cubes on the conveyor + cubes sitting on a different colour. */
 export function disorder(s: LoopState): number {
-  let h = beltCount(s)
+  let h = conveyorLoad(s)
   for (const t of s.trucks) {
     if (t.done || t.inactive || !t.blocks.length) continue
     let base = 1

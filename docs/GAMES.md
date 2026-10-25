@@ -92,8 +92,9 @@ Leaderboard: completed races, per difficulty, WPM then accuracy. The server re-c
 An original truck-and-conveyor sorting puzzle. The name, artwork and all 60 level layouts are our own. The general idea is inspired by the conveyor-sorting genre; see `LoopSort_Analysis_Report.md` (outside the repo) for the research. The internal id stays `loop-sort`, so saved progress, links and database rows are unchanged.
 
 **Rules** (`src/games/loop-sort/logic.ts`, `attempt.ts`):
-- Up to **12 trucks** around a looping conveyor: up to 3 on each side, then rows of up to 3 above and below. Each truck holds 4 cubes.
-- Tapping a truck sends its **whole top group of same-coloured cubes** onto the conveyor (observed in reference gameplay).
+- Up to **12 upright trucks** around a portrait conveyor loop, like the reference Level 1. Up to 4 stand side by side inside the loop (fed by the top belt). Bigger levels get a second inside row (fed by the bottom belt) and up to 2 trucks above and 2 below the loop. Conveyor positions are evenly spaced, so cubes move at a constant speed. Each truck holds 4 cubes.
+- Tapped cubes **stream out one per conveyor step**, so each cube passes every truck downstream (no cube can skip a matching truck), and a truck never takes back cubes it is still sending out.
+- Tapping a truck sends its **whole top group of same-coloured cubes** onto the conveyor (observed in reference gameplay). The header counter includes cubes still streaming out.
 - Cubes ride the loop and drop into the first truck they pass that has room and is empty or has the same colour on top.
 - 4 cubes of one colour complete a truck, which stays in place marked ✓. Sort every cube to win.
 - The header shows **cubes on the conveyor / capacity**.

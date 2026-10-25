@@ -12,7 +12,7 @@ import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, star
 import { BLOCK_NAMES, LoopBoard, type BeltItem } from './Board'
 import { ABILITY_LABELS, CHAKKAR_CONFIG, continuesLeft, usesLeft, type AbilityId } from './config'
 import levelsData from './levels.json'
-import { beltCount, canShuffle, nextSpareDock, tick, type LevelDef, type LoopState } from './logic'
+import { canShuffle, conveyorLoad, nextSpareDock, tick, type LevelDef, type LoopState } from './logic'
 
 const LEVELS = levelsData as LevelDef[]
 const TICK_MS = 110
@@ -183,7 +183,7 @@ export default function LoopSort() {
   )
 
   // conveyor motor: runs while playing; pauses while the Out of Space / no-moves screens are open
-  const moving = screen === 'play' && status === 'playing' && !!attempt && beltCount(attempt.state) > 0
+  const moving = screen === 'play' && status === 'playing' && !!attempt && conveyorLoad(attempt.state) > 0
   useEffect(() => {
     if (!moving) return
     const t = window.setInterval(() => {
@@ -193,10 +193,12 @@ export default function LoopSort() {
       const r = tick(s)
       setItems((list) => {
         const moved = list.map((it) => ({ ...it, pos: (it.pos + 1) % s.belt.length }))
-        if (!r.absorbed.length) return moved
         const gone = new Set(r.absorbed.map((x) => r.state.trucks[x.truck].pos))
-        return moved.filter((it) => !gone.has(it.pos))
+        const kept = gone.size ? moved.filter((it) => !gone.has(it.pos)) : moved
+        // cubes streaming out of trucks appear at the truck's own belt position
+        return r.emitted.length ? [...kept, ...r.emitted.map((e) => ({ id: nextId.current++, color: e.color, pos: e.pos }))] : kept
       })
+      if (r.emitted.length) idle.current = 0
       if (r.absorbed.length) {
         idle.current = 0
         sfx.point()
@@ -205,7 +207,7 @@ export default function LoopSort() {
         sfx.match()
         vibrate(40)
       }
-      const settled = beltCount(r.state) === 0 || idle.current >= s.belt.length
+      const settled = conveyorLoad(r.state) === 0 || idle.current >= s.belt.length
       const next = afterTick(a, r.state, settled)
       attemptRef.current = next
       setAttempt(next)
@@ -215,7 +217,7 @@ export default function LoopSort() {
 
   // an empty conveyor is already settled: check win / no moves right away
   useEffect(() => {
-    if (!attempt || attempt.status !== 'playing' || beltCount(attempt.state) > 0) return
+    if (!attempt || attempt.status !== 'playing' || conveyorLoad(attempt.state) > 0) return
     const next = afterTick(attempt, attempt.state, true)
     if (next.status !== attempt.status) {
       attemptRef.current = next
@@ -491,7 +493,7 @@ export default function LoopSort() {
   // ---------------- PLAY ----------------
   if (!level || !attempt) return null
   const board = attempt.state
-  const count = beltCount(board)
+  const count = conveyorLoad(board) // includes cubes still streaming out of a truck (same as the Out of Space check)
   const abilities: { id: AbilityId; icon: React.ReactNode }[] = [
     { id: 'undo', icon: <Undo2 className="size-5" /> },
     { id: 'shuffle', icon: <Shuffle className="size-5" /> },

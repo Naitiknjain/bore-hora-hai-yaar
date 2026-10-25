@@ -15,8 +15,10 @@ describe('loop sort rules', () => {
     const r = tap(s, 0)
     expect(r.error).toBeNull()
     expect(r.state.trucks[0].blocks).toEqual([0])
-    expect(beltCount(r.state)).toBe(2)
-    expect(r.state.belt[s.trucks[0].pos]).toBeNull() // not dropped straight back
+    expect(r.state.trucks[0].outgoing).toEqual([1, 1]) // streams out one cube per step
+    expect(beltCount(r.state)).toBe(0)
+    const t1 = tick(r.state)
+    expect(t1.emitted).toEqual([{ truck: 0, pos: s.trucks[0].pos, color: 1 }])
   })
 
   it('refuses taps that would overflow the belt, or on empty/locked trucks', () => {
@@ -61,7 +63,7 @@ describe('loop sort rules', () => {
   })
 
   it('tick moves cubes one position per step', () => {
-    const s = tap(initialState({ capacity: 6, trucks: [{ blocks: [4] }, { blocks: [2] }, { blocks: [3] }] }), 0).state
+    const s = tick(tap(initialState({ capacity: 6, trucks: [{ blocks: [4] }, { blocks: [2] }, { blocks: [3] }] }), 0).state).state
     const before = s.belt.findIndex((b) => b !== null)
     const after = tick(s).state.belt.findIndex((b) => b !== null)
     expect(after).toBe((before + 1) % s.belt.length)

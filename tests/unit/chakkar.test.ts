@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import levels from '../../src/games/loop-sort/levels.json'
 import { CHAKKAR_CONFIG, continuesLeft, usesLeft, type ChakkarConfig } from '../../src/games/loop-sort/config'
 import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, applyAbility, type Attempt } from '../../src/games/loop-sort/attempt'
-import { attemptTap, beltCount, beltLayout, initialState, maxCapacity, MAX_TRUCKS, replay, settle, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
+import { attemptTap, beltCount, beltLayout, boardLayout, conveyorLoad, freeSpace, initialState, maxCapacity, MAX_TRUCKS, replay, settle, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
 
 const LEVELS = levels as LevelDef[]
 const lvl = (trucks: number[][], capacity: number, n = 1): LevelDef => ({ n, colors: 4, capacity, hidden: false, trucks: trucks.map((blocks) => ({ blocks })), solution: [] })
@@ -36,20 +36,60 @@ describe('config', () => {
 })
 
 describe('layout with up to 12 trucks', () => {
-  it('gives every truck its own conveyor position for 1..12 trucks', () => {
+  it('portrait loop, upright trucks, one belt position each, evenly spaced, no overlaps (1..12 trucks)', () => {
     for (let k = 1; k <= 12; k += 1) {
-      const l = beltLayout(k)
-      expect(new Set(l.truckPos).size).toBe(k)
-      for (const p of l.truckPos) {
-        expect(p).toBeGreaterThanOrEqual(0)
-        expect(p).toBeLessThan(l.length)
+      const b = boardLayout(k)
+      expect(b.trucks).toHaveLength(k)
+      expect(new Set(b.trucks.map((t) => t.pos)).size).toBe(k)
+      expect(b.loop.h).toBeGreaterThanOrEqual(b.loop.w) // portrait
+      // constant speed: every step along the loop has (almost) the same length
+      const gaps = b.points.map((p, i) => Math.hypot(b.points[(i + 1) % b.points.length][0] - p[0], b.points[(i + 1) % b.points.length][1] - p[1]))
+      expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThan(2)
+      for (const t of b.trucks) {
+        expect(t.h).toBeGreaterThan(t.w) // upright
+        const [px] = b.points[t.pos]
+        expect(px).toBeGreaterThan(t.x) // the truck's belt position is right at its open end
+        expect(px).toBeLessThan(t.x + t.w)
+        expect(t.x).toBeGreaterThanOrEqual(0)
+        expect(t.x + t.w).toBeLessThanOrEqual(b.width)
       }
-      expect(l.truckSide.filter((x) => x === 'left' || x === 'right').length).toBeLessThanOrEqual(6)
-      expect(l.top).toBeLessThanOrEqual(3)
-      expect(l.bottom).toBeLessThanOrEqual(3)
+      for (let i = 0; i < k; i += 1)
+        for (let j = i + 1; j < k; j += 1) {
+          const p = b.trucks[i]
+          const q = b.trucks[j]
+          expect(p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h).toBe(false)
+        }
+      expect(beltLayout(k).length).toBe(b.points.length)
     }
-    const twelve = beltLayout(12)
-    expect([twelve.top, twelve.bottom, twelve.rows]).toEqual([3, 3, 3])
+    expect(boardLayout(2).trucks.map((t) => t.row)).toEqual(['inner-top', 'inner-top']) // side by side, like Level 1
+    const rows = boardLayout(12).trucks.map((t) => t.row)
+    expect(['inner-top', 'inner-bottom', 'outer-top', 'outer-bottom'].map((r) => rows.filter((x) => x === r).length)).toEqual([4, 4, 2, 2])
+  })
+
+  it('cubes stream out one per step and every truck downstream is offered them (no skipping)', () => {
+    // two neighbouring trucks: the group from truck 0 must end up entirely in the matching truck
+    let s = initialState(lvl([[3, 1, 1], [1, 1]], 6))
+    s = tap(s, 0).state
+    expect(beltCount(s)).toBe(0)
+    expect(conveyorLoad(s)).toBe(2) // still streaming out of the truck
+    expect(freeSpace(s)).toBe(4)
+    let emittedPerTick = 0
+    for (let i = 0; i < 3; i += 1) {
+      const r = tick(s)
+      emittedPerTick = Math.max(emittedPerTick, r.emitted.length)
+      s = r.state
+    }
+    expect(emittedPerTick).toBe(1)
+    s = settle(s)
+    expect(s.trucks[1].done).toBe(true) // got all four 1s
+    expect(s.trucks[0].blocks).toEqual([3]) // never took its own cubes back
+  })
+
+  it('a truck that is still streaming out never accepts cubes', () => {
+    let s = initialState(lvl([[2, 2]], 6))
+    s = tap(s, 0).state // source now empty but still emitting
+    s = settle(s)
+    expect(s.trucks[0].blocks).toEqual([2, 2]) // came back only after a full lap
   })
 
   it('never builds more than 12 trucks, even with spare docks', () => {
@@ -103,7 +143,7 @@ describe('conveyor capacity and the Out of Space rule', () => {
     expect(c.status).toBe('playing')
     expect(c.continuesUsed).toBe(1)
     expect(c.state.capacity).toBe(3)
-    expect(beltCount(c.state)).toBe(3)
+    expect(conveyorLoad(c.state)).toBe(3) // the waiting move went through (its cube streams out next)
     expect(c.state.trucks[1].blocks).toEqual([2])
   })
 
