@@ -386,7 +386,7 @@ export default function LoopSort() {
   }
 
   const shell =
-    'mx-auto max-w-2xl overflow-hidden rounded-[2rem] bg-[radial-gradient(ellipse_at_50%_30%,#3d27a0_0%,#26166a_48%,#150b3f_100%)] p-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:p-6'
+    'mx-auto max-w-2xl overflow-hidden rounded-[2rem] bg-[radial-gradient(ellipse_at_50%_30%,#3d27a0_0%,#26166a_48%,#150b3f_100%)] p-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] max-[379px]:p-3 sm:p-6'
 
   // ---------------- HOME ----------------
   if (screen === 'home') {
@@ -564,111 +564,114 @@ export default function LoopSort() {
         </div>
       </div>
 
-      <div className="relative mt-3">
-        <LoopBoard
-          state={board}
-          items={items}
-          hidden={level.hidden}
-          tickMs={TICK_MS}
-          shakeTruck={shake}
-          highlightTrucks={shuffleTargets}
-          justAdded={justAdded}
-          onTruck={onTruck}
-        />
-        {status === 'won' && (
-          <Popup label="Level complete" emoji="🎉" title={`Level ${level.n} done!`}>
-            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">Saare cubes sorted. Shabaash!</p>
-            <div className="mt-4 grid gap-2.5">
-              {level.n < LEVELS.length && (
-                <ChunkyButton onClick={() => startLevel(level.n + 1)} data-autofocus disabled={!canStartNormal}>
-                  <Play className="size-5" /> Next level
+      {/* board + abilities: stacked on phones, abilities in a column beside the board on wide screens */}
+      <div className="mt-3 lg:flex lg:items-center lg:justify-center lg:gap-8">
+        <div className="relative lg:min-w-0 lg:flex-1">
+          <LoopBoard
+            state={board}
+            items={items}
+            hidden={level.hidden}
+            tickMs={TICK_MS}
+            shakeTruck={shake}
+            highlightTrucks={shuffleTargets}
+            justAdded={justAdded}
+            onTruck={onTruck}
+          />
+          {status === 'won' && (
+            <Popup label="Level complete" emoji="🎉" title={`Level ${level.n} done!`}>
+              <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">Saare cubes sorted. Shabaash!</p>
+              <div className="mt-4 grid gap-2.5">
+                {level.n < LEVELS.length && (
+                  <ChunkyButton onClick={() => startLevel(level.n + 1)} data-autofocus disabled={!canStartNormal}>
+                    <Play className="size-5" /> Next level
+                  </ChunkyButton>
+                )}
+                <ChunkyButton tone="purple" onClick={() => setScreen('home')}>
+                  Home
                 </ChunkyButton>
-              )}
-              <ChunkyButton tone="purple" onClick={() => setScreen('home')}>
-                Home
-              </ChunkyButton>
-            </div>
-          </Popup>
-        )}
-        {status === 'out-of-space' && attempt.pending && (
-          <Popup label="Out of Space" emoji="📦" title="Out of Space!">
-            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">
-              {attempt.pending.needed === 1 ? '1 cube needs' : `${attempt.pending.needed} cubes need`} room, but the conveyor has{' '}
-              {attempt.pending.free === 1 ? '1 free slot' : `${attempt.pending.free} free slots`}.
-            </p>
-            <div className="mt-4 grid gap-2.5">
-              {canContinue(attempt) && (
-                <ChunkyButton onClick={doContinue} data-autofocus>
-                  Continue (+{CHAKKAR_CONFIG.slotsPerContinue} slot)
-                  {!admin && <span className="whitespace-nowrap rounded-full bg-white/40 px-2 py-0.5 text-xs">{leftCont} free</span>}
+              </div>
+            </Popup>
+          )}
+          {status === 'out-of-space' && attempt.pending && (
+            <Popup label="Out of Space" emoji="📦" title="Out of Space!">
+              <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">
+                {attempt.pending.needed === 1 ? '1 cube needs' : `${attempt.pending.needed} cubes need`} room, but the conveyor has{' '}
+                {attempt.pending.free === 1 ? '1 free slot' : `${attempt.pending.free} free slots`}.
+              </p>
+              <div className="mt-4 grid gap-2.5">
+                {canContinue(attempt) && (
+                  <ChunkyButton onClick={doContinue} data-autofocus>
+                    Continue (+{CHAKKAR_CONFIG.slotsPerContinue} slot)
+                    {!admin && <span className="whitespace-nowrap rounded-full bg-white/40 px-2 py-0.5 text-xs">{leftCont} free</span>}
+                  </ChunkyButton>
+                )}
+                {abilityAvailable(attempt, 'extraSlot') && (
+                  <ChunkyButton tone="yellow" onClick={() => ability('extraSlot')}>
+                    Use +1 Slot ({slotUses === Infinity ? '∞' : slotUses} left)
+                  </ChunkyButton>
+                )}
+                <ChunkyButton tone="red" onClick={doGiveUp}>
+                  Give Up{admin ? '' : ' (-1 life)'}
                 </ChunkyButton>
-              )}
-              {abilityAvailable(attempt, 'extraSlot') && (
-                <ChunkyButton tone="yellow" onClick={() => ability('extraSlot')}>
-                  Use +1 Slot ({slotUses === Infinity ? '∞' : slotUses} left)
+              </div>
+            </Popup>
+          )}
+          {status === 'stuck' && (
+            <Popup label="No moves left" emoji="🚧" title="No moves left">
+              <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">No truck can be tapped and the waiting cubes have nowhere to go.</p>
+              <div className="mt-4 grid gap-2.5">
+                {abilityAvailable(attempt, 'extraTruck') && <ChunkyButton onClick={() => ability('extraTruck')}>Add an Extra Truck</ChunkyButton>}
+                {abilityAvailable(attempt, 'undo') && (
+                  <ChunkyButton tone="yellow" onClick={() => ability('undo')}>
+                    Undo last tap
+                  </ChunkyButton>
+                )}
+                <ChunkyButton tone="red" onClick={doGiveUp}>
+                  Give Up{admin ? '' : ' (-1 life)'}
                 </ChunkyButton>
-              )}
-              <ChunkyButton tone="red" onClick={doGiveUp}>
-                Give Up{admin ? '' : ' (-1 life)'}
-              </ChunkyButton>
-            </div>
-          </Popup>
-        )}
-        {status === 'stuck' && (
-          <Popup label="No moves left" emoji="🚧" title="No moves left">
-            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">No truck can be tapped and the waiting cubes have nowhere to go.</p>
-            <div className="mt-4 grid gap-2.5">
-              {abilityAvailable(attempt, 'extraTruck') && <ChunkyButton onClick={() => ability('extraTruck')}>Add an Extra Truck</ChunkyButton>}
-              {abilityAvailable(attempt, 'undo') && (
-                <ChunkyButton tone="yellow" onClick={() => ability('undo')}>
-                  Undo last tap
+              </div>
+            </Popup>
+          )}
+          {status === 'given-up' && (
+            <Popup label="Attempt over" emoji="💔" title="Attempt over">
+              <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">{admin ? 'Admin Mode: no life lost.' : `You lost a life. ${account.lives} left.`}</p>
+              <div className="mt-4 grid gap-2.5">
+                <ChunkyButton onClick={() => startLevel(level.n)} disabled={!admin && account.lives <= 0} data-autofocus>
+                  {!admin && account.lives <= 0 ? 'No lives left' : 'Try again'}
                 </ChunkyButton>
-              )}
-              <ChunkyButton tone="red" onClick={doGiveUp}>
-                Give Up{admin ? '' : ' (-1 life)'}
-              </ChunkyButton>
-            </div>
-          </Popup>
-        )}
-        {status === 'given-up' && (
-          <Popup label="Attempt over" emoji="💔" title="Attempt over">
-            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">{admin ? 'Admin Mode: no life lost.' : `You lost a life. ${account.lives} left.`}</p>
-            <div className="mt-4 grid gap-2.5">
-              <ChunkyButton onClick={() => startLevel(level.n)} disabled={!admin && account.lives <= 0} data-autofocus>
-                {!admin && account.lives <= 0 ? 'No lives left' : 'Try again'}
-              </ChunkyButton>
-              <ChunkyButton tone="purple" onClick={() => setScreen('home')}>
-                Home
-              </ChunkyButton>
-            </div>
-          </Popup>
-        )}
-      </div>
+                <ChunkyButton tone="purple" onClick={() => setScreen('home')}>
+                  Home
+                </ChunkyButton>
+              </div>
+            </Popup>
+          )}
+          {/* status line floats over the bottom of the board so it never pushes the layout */}
+          <p className="pointer-events-none absolute inset-x-0 bottom-1 z-10 flex justify-center px-3" aria-live="polite">
+            {message && <span className="rounded-full bg-[#120a3a]/85 px-3 py-1 text-center text-sm font-semibold text-[#f2edff] shadow-lg">{message}</span>}
+          </p>
+        </div>
 
-      <p className="mt-2 min-h-6 text-center text-sm font-semibold text-[#e6deff]" aria-live="polite">
-        {message}
-      </p>
-
-      {/* abilities */}
-      <div className="mt-1 grid grid-cols-4 gap-2 px-1">
-        {abilities.map(({ id, icon }) => {
-          const left = usesLeft(id, attempt.used[id], admin)
-          const available = abilityAvailable(attempt, id)
-          const active = id === 'shuffle' && shuffleMode
-          return (
-            <AbilityButton
-              key={id}
-              icon={icon}
-              name={ABILITY_LABELS[id]}
-              count={left}
-              active={active}
-              onClick={() => ability(id)}
-              disabled={status !== 'playing' || (!available && !active)}
-              aria-pressed={id === 'shuffle' ? shuffleMode : undefined}
-              aria-label={`${ABILITY_LABELS[id]}, ${left === Infinity ? 'unlimited' : `${left} left`}`}
-            />
-          )
-        })}
+        {/* abilities */}
+        <div className="mt-3 grid grid-cols-4 gap-2 px-1 lg:mt-0 lg:w-24 lg:shrink-0 lg:grid-cols-1 lg:gap-5 lg:px-0">
+          {abilities.map(({ id, icon }) => {
+            const left = usesLeft(id, attempt.used[id], admin)
+            const available = abilityAvailable(attempt, id)
+            const active = id === 'shuffle' && shuffleMode
+            return (
+              <AbilityButton
+                key={id}
+                icon={icon}
+                name={ABILITY_LABELS[id]}
+                count={left}
+                active={active}
+                onClick={() => ability(id)}
+                disabled={status !== 'playing' || (!available && !active)}
+                aria-pressed={id === 'shuffle' ? shuffleMode : undefined}
+                aria-label={`${ABILITY_LABELS[id]}, ${left === Infinity ? 'unlimited' : `${left} left`}`}
+              />
+            )
+          })}
+        </div>
       </div>
 
       {/* gear menu */}

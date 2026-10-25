@@ -115,6 +115,9 @@ test.describe('chakkar cubes', () => {
       }
     })
     for (const v of Object.values(fit)) expect(v).toBeLessThan(1.5)
+    // the whole play screen (HUD, board, abilities) fits without vertical scrolling
+    const overflow = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+    expect(overflow).toBeLessThanOrEqual(1)
   })
 
   test('four abilities (no Hint), conveyor never exceeds capacity, Out of Space -> Continue -> Give Up', async ({ page }) => {

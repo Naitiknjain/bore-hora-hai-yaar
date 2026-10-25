@@ -118,7 +118,7 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
       <svg
         ref={svgRef}
         viewBox={`0 0 ${b.width} ${b.height}`}
-        className="game-surface mx-auto block max-h-[min(64dvh,calc(100dvh-330px))] min-h-[260px] w-full"
+        className="game-surface mx-auto block max-h-[calc(100dvh-324px)] min-h-[240px] min-[380px]:max-h-[calc(100dvh-342px)] sm:max-h-[calc(100dvh-354px)] lg:max-h-[min(760px,calc(100dvh-262px))] w-full"
         role="group"
         aria-label="Chakkar Cubes board"
       >
