@@ -1,8 +1,26 @@
-import { ArrowLeft, Boxes, Check, Heart, Infinity as InfinityIcon, Lock, Play, Plus, RotateCcw, Shield, ShieldOff, Shuffle, Truck as TruckIcon, Undo2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  ArrowLeft,
+  Boxes,
+  Check,
+  Heart,
+  Infinity as InfinityIcon,
+  Lock,
+  Play,
+  Plus,
+  RotateCcw,
+  Settings,
+  Shield,
+  ShieldOff,
+  Shuffle,
+  Truck as TruckIcon,
+  Undo2,
+  Volume2,
+  VolumeX,
+} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog, Modal } from '../../components/ui/Modal'
-import { vibrate } from '../../features/settings/SettingsContext'
+import { useSettings, vibrate } from '../../features/settings/SettingsContext'
 import { useLeaveGuard } from '../../hooks/useLeaveGuard'
 import { formatDuration } from '../../lib/scoring'
 import { sfx } from '../../lib/sound'
@@ -13,6 +31,7 @@ import { BLOCK_NAMES, LoopBoard, type BeltItem } from './Board'
 import { ABILITY_LABELS, CHAKKAR_CONFIG, continuesLeft, usesLeft, type AbilityId } from './config'
 import levelsData from './levels.json'
 import { canShuffle, conveyorLoad, nextSpareDock, tick, type LevelDef, type LoopState } from './logic'
+import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton } from './ui'
 
 const LEVELS = levelsData as LevelDef[]
 const TICK_MS = 110
@@ -71,8 +90,16 @@ function Title() {
   )
 }
 
-function LivesPill({ lives, max, nextLifeAt, admin }: { lives: number; max: number; nextLifeAt: number | null; admin: boolean }) {
-  const now = useNow(nextLifeAt !== null && !admin)
+function LivesPill({ lives, max, nextLifeAt, admin, compact }: { lives: number; max: number; nextLifeAt: number | null; admin: boolean; compact?: boolean }) {
+  const now = useNow(nextLifeAt !== null && !admin && !compact)
+  if (compact)
+    // in-level HUD: just the heart and the count, same chunky style as the other pills
+    return (
+      <HudPill label={admin ? 'Lives: unlimited' : `Lives: ${lives} of ${max}`}>
+        <Heart className="size-5 fill-[#ff4d5e] text-[#ff4d5e]" aria-hidden />
+        {admin ? <InfinityIcon className="size-5" aria-hidden /> : lives}
+      </HudPill>
+    )
   return (
     <div className="inline-flex items-center gap-2 rounded-full bg-[#2a1a6e]/80 px-3 py-1.5 text-sm font-bold text-white" aria-live="polite">
       <Heart className="size-5 fill-[#ff4d5e] text-[#ff4d5e]" aria-hidden />
@@ -111,6 +138,8 @@ export default function LoopSort() {
   const [shuffleMode, setShuffleMode] = useState(false)
   const [justAdded, setJustAdded] = useState<number | null>(null)
   const [confirm, setConfirm] = useState<null | 'restart' | 'leave'>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { settings, update } = useSettings()
   const nextId = useRef(1)
   const idle = useRef(0)
   const recorded = useRef(false)
@@ -494,38 +523,44 @@ export default function LoopSort() {
   if (!level || !attempt) return null
   const board = attempt.state
   const count = conveyorLoad(board) // includes cubes still streaming out of a truck (same as the Out of Space check)
-  const abilities: { id: AbilityId; icon: React.ReactNode }[] = [
-    { id: 'undo', icon: <Undo2 className="size-5" /> },
-    { id: 'shuffle', icon: <Shuffle className="size-5" /> },
-    { id: 'extraTruck', icon: <TruckIcon className="size-5" /> },
-    { id: 'extraSlot', icon: <Plus className="size-5" /> },
+  const abilities: { id: AbilityId; icon: ReactNode }[] = [
+    { id: 'undo', icon: <Undo2 className="size-6" strokeWidth={2.6} /> },
+    { id: 'shuffle', icon: <Shuffle className="size-6" strokeWidth={2.6} /> },
+    { id: 'extraTruck', icon: <TruckIcon className="size-6" strokeWidth={2.4} /> },
+    { id: 'extraSlot', icon: <Plus className="size-7" strokeWidth={3} /> },
   ]
   const shuffleTargets = shuffleMode ? board.trucks.map((_, i) => i).filter((i) => canShuffle(board, i)) : []
   const leftCont = continuesLeft(attempt.continuesUsed, admin)
   const slotUses = usesLeft('extraSlot', attempt.used.extraSlot, admin)
-  const overlay = status === 'won' || status === 'out-of-space' || status === 'stuck' || status === 'given-up'
+  const full = count >= board.capacity
+  const restart = () => {
+    setMenuOpen(false)
+    if (costsLife) setConfirm('restart')
+    else startLevel(level.n)
+  }
 
   return (
     <div className={shell}>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => (costsLife ? setConfirm('leave') : setScreen('home'))}
-          aria-label="Back to Chakkar Cubes home"
-          className="inline-flex size-10 items-center justify-center rounded-xl bg-black/20 hover:bg-black/30"
-        >
-          <ArrowLeft className="size-5" />
-        </button>
-        <div className="rounded-full bg-black/25 px-3 py-1 font-display text-lg font-bold">Level {level.n}</div>
-        <div
-          className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${count >= board.capacity ? 'bg-[#ff4d5e]/80' : 'bg-black/25'}`}
-          aria-label={`Conveyor ${count} of ${board.capacity} cubes`}
-          data-testid="conveyor-count"
-        >
-          <Boxes className="size-4" /> {count}/{board.capacity}
-        </div>
-        <div className="ml-auto">
-          <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} />
+      {/* HUD */}
+      <div className="flex items-center gap-1.5 min-[380px]:gap-2">
+        <RoundIconButton label="Back to Chakkar Cubes home" onClick={() => (costsLife ? setConfirm('leave') : setScreen('home'))}>
+          <ArrowLeft className="size-5" strokeWidth={2.8} />
+        </RoundIconButton>
+        <HudPill label={`Level ${level.n}`}>
+          <span aria-hidden>
+            <span className="max-[359px]:hidden">Level </span>
+            <span className="min-[360px]:hidden">Lv </span>
+            {level.n}
+          </span>
+        </HudPill>
+        <HudPill tone={full ? 'danger' : 'default'} label={`Conveyor ${count} of ${board.capacity} cubes`} testId="conveyor-count">
+          <Boxes className="size-5 max-[359px]:hidden" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
+        </HudPill>
+        <div className="ml-auto flex items-center gap-1.5 min-[380px]:gap-2">
+          <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} compact />
+          <RoundIconButton label="Game menu" onClick={() => setMenuOpen(true)}>
+            <Settings className="size-5" strokeWidth={2.6} />
+          </RoundIconButton>
         </div>
       </div>
 
@@ -540,139 +575,128 @@ export default function LoopSort() {
           justAdded={justAdded}
           onTruck={onTruck}
         />
-        {overlay && (
-          <div
-            className="absolute inset-0 flex items-center justify-center rounded-3xl bg-[#2a1a6e]/80 p-4 backdrop-blur-sm animate-fade-in"
-            role="dialog"
-            aria-modal="true"
-            aria-label={status === 'won' ? 'Level complete' : status === 'out-of-space' ? 'Out of Space' : status === 'stuck' ? 'No moves left' : 'Attempt over'}
-          >
-            <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center text-[#2a1a6e] shadow-2xl">
-              {status === 'won' && (
-                <>
-                  <p className="text-5xl" aria-hidden>
-                    🎉
-                  </p>
-                  <p className="mt-1 font-display text-3xl font-extrabold">Level {level.n} done!</p>
-                  <div className="mt-4 grid gap-2">
-                    {level.n < LEVELS.length && (
-                      <Button onClick={() => startLevel(level.n + 1)} data-autofocus disabled={!canStartNormal}>
-                        Next level
-                      </Button>
-                    )}
-                    <Button variant="secondary" onClick={() => setScreen('home')}>
-                      Home
-                    </Button>
-                  </div>
-                </>
+        {status === 'won' && (
+          <Popup label="Level complete" emoji="🎉" title={`Level ${level.n} done!`}>
+            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">Saare cubes sorted. Shabaash!</p>
+            <div className="mt-4 grid gap-2.5">
+              {level.n < LEVELS.length && (
+                <ChunkyButton onClick={() => startLevel(level.n + 1)} data-autofocus disabled={!canStartNormal}>
+                  <Play className="size-5" /> Next level
+                </ChunkyButton>
               )}
-              {status === 'out-of-space' && attempt.pending && (
-                <>
-                  <p className="text-5xl" aria-hidden>
-                    📦
-                  </p>
-                  <p className="mt-1 font-display text-3xl font-extrabold">Out of Space!</p>
-                  <p className="mt-1 text-sm">
-                    {attempt.pending.needed === 1 ? '1 cube needs' : `${attempt.pending.needed} cubes need`} room, but the conveyor has{' '}
-                    {attempt.pending.free === 1 ? '1 free slot' : `${attempt.pending.free} free slots`}.
-                  </p>
-                  <div className="mt-4 grid gap-2">
-                    {canContinue(attempt) && (
-                      <Button onClick={doContinue} data-autofocus>
-                        Continue (+{CHAKKAR_CONFIG.slotsPerContinue} slot){admin ? '' : ` · ${leftCont} free`}
-                      </Button>
-                    )}
-                    {abilityAvailable(attempt, 'extraSlot') && (
-                      <Button variant="secondary" onClick={() => ability('extraSlot')}>
-                        Use +1 Slot ({slotUses === Infinity ? '∞' : slotUses} left)
-                      </Button>
-                    )}
-                    <Button variant="danger" onClick={doGiveUp}>
-                      Give Up{admin ? '' : ' (-1 life)'}
-                    </Button>
-                  </div>
-                </>
-              )}
-              {status === 'stuck' && (
-                <>
-                  <p className="text-5xl" aria-hidden>
-                    🚧
-                  </p>
-                  <p className="mt-1 font-display text-3xl font-extrabold">No moves left</p>
-                  <p className="mt-1 text-sm">No truck can be tapped and the waiting cubes have nowhere to go.</p>
-                  <div className="mt-4 grid gap-2">
-                    {abilityAvailable(attempt, 'extraTruck') && <Button onClick={() => ability('extraTruck')}>Add an Extra Truck</Button>}
-                    {abilityAvailable(attempt, 'undo') && (
-                      <Button variant="secondary" onClick={() => ability('undo')}>
-                        Undo last tap
-                      </Button>
-                    )}
-                    <Button variant="danger" onClick={doGiveUp}>
-                      Give Up{admin ? '' : ' (-1 life)'}
-                    </Button>
-                  </div>
-                </>
-              )}
-              {status === 'given-up' && (
-                <>
-                  <p className="text-5xl" aria-hidden>
-                    💔
-                  </p>
-                  <p className="mt-1 font-display text-3xl font-extrabold">Attempt over</p>
-                  <p className="mt-1 text-sm">{admin ? 'Admin Mode: no life lost.' : `You lost a life. ${account.lives} left.`}</p>
-                  <div className="mt-4 grid gap-2">
-                    <Button onClick={() => startLevel(level.n)} disabled={!admin && account.lives <= 0} data-autofocus>
-                      {!admin && account.lives <= 0 ? 'No lives left' : 'Try again'}
-                    </Button>
-                    <Button variant="secondary" onClick={() => setScreen('home')}>
-                      Home
-                    </Button>
-                  </div>
-                </>
-              )}
+              <ChunkyButton tone="purple" onClick={() => setScreen('home')}>
+                Home
+              </ChunkyButton>
             </div>
-          </div>
+          </Popup>
+        )}
+        {status === 'out-of-space' && attempt.pending && (
+          <Popup label="Out of Space" emoji="📦" title="Out of Space!">
+            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">
+              {attempt.pending.needed === 1 ? '1 cube needs' : `${attempt.pending.needed} cubes need`} room, but the conveyor has{' '}
+              {attempt.pending.free === 1 ? '1 free slot' : `${attempt.pending.free} free slots`}.
+            </p>
+            <div className="mt-4 grid gap-2.5">
+              {canContinue(attempt) && (
+                <ChunkyButton onClick={doContinue} data-autofocus>
+                  Continue (+{CHAKKAR_CONFIG.slotsPerContinue} slot)
+                  {!admin && <span className="whitespace-nowrap rounded-full bg-white/40 px-2 py-0.5 text-xs">{leftCont} free</span>}
+                </ChunkyButton>
+              )}
+              {abilityAvailable(attempt, 'extraSlot') && (
+                <ChunkyButton tone="yellow" onClick={() => ability('extraSlot')}>
+                  Use +1 Slot ({slotUses === Infinity ? '∞' : slotUses} left)
+                </ChunkyButton>
+              )}
+              <ChunkyButton tone="red" onClick={doGiveUp}>
+                Give Up{admin ? '' : ' (-1 life)'}
+              </ChunkyButton>
+            </div>
+          </Popup>
+        )}
+        {status === 'stuck' && (
+          <Popup label="No moves left" emoji="🚧" title="No moves left">
+            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">No truck can be tapped and the waiting cubes have nowhere to go.</p>
+            <div className="mt-4 grid gap-2.5">
+              {abilityAvailable(attempt, 'extraTruck') && <ChunkyButton onClick={() => ability('extraTruck')}>Add an Extra Truck</ChunkyButton>}
+              {abilityAvailable(attempt, 'undo') && (
+                <ChunkyButton tone="yellow" onClick={() => ability('undo')}>
+                  Undo last tap
+                </ChunkyButton>
+              )}
+              <ChunkyButton tone="red" onClick={doGiveUp}>
+                Give Up{admin ? '' : ' (-1 life)'}
+              </ChunkyButton>
+            </div>
+          </Popup>
+        )}
+        {status === 'given-up' && (
+          <Popup label="Attempt over" emoji="💔" title="Attempt over">
+            <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">{admin ? 'Admin Mode: no life lost.' : `You lost a life. ${account.lives} left.`}</p>
+            <div className="mt-4 grid gap-2.5">
+              <ChunkyButton onClick={() => startLevel(level.n)} disabled={!admin && account.lives <= 0} data-autofocus>
+                {!admin && account.lives <= 0 ? 'No lives left' : 'Try again'}
+              </ChunkyButton>
+              <ChunkyButton tone="purple" onClick={() => setScreen('home')}>
+                Home
+              </ChunkyButton>
+            </div>
+          </Popup>
         )}
       </div>
 
-      <p className="mt-2 min-h-6 text-center text-sm text-[#e6e0ff]" aria-live="polite">
+      <p className="mt-2 min-h-6 text-center text-sm font-semibold text-[#e6deff]" aria-live="polite">
         {message}
       </p>
 
-      <div className="mt-2 grid grid-cols-5 gap-1.5 sm:gap-2">
+      {/* abilities */}
+      <div className="mt-1 grid grid-cols-4 gap-2 px-1">
         {abilities.map(({ id, icon }) => {
           const left = usesLeft(id, attempt.used[id], admin)
           const available = abilityAvailable(attempt, id)
           const active = id === 'shuffle' && shuffleMode
           return (
-            <button
+            <AbilityButton
               key={id}
-              type="button"
+              icon={icon}
+              name={ABILITY_LABELS[id]}
+              count={left}
+              active={active}
               onClick={() => ability(id)}
               disabled={status !== 'playing' || (!available && !active)}
               aria-pressed={id === 'shuffle' ? shuffleMode : undefined}
               aria-label={`${ABILITY_LABELS[id]}, ${left === Infinity ? 'unlimited' : `${left} left`}`}
-              className={`relative flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 text-[11px] font-bold leading-tight shadow-[0_4px_0_0_rgba(0,0,0,0.25)] active:translate-y-0.5 disabled:opacity-40 sm:text-xs ${
-                active ? 'bg-[#ffd23f] text-[#2a1a6e]' : 'bg-white/90 text-[#2a1a6e]'
-              }`}
-            >
-              {icon}
-              {ABILITY_LABELS[id]}
-              <span className="absolute -right-1 -top-1 flex min-w-6 items-center justify-center rounded-full bg-[#ff4d5e] px-1 text-[11px] text-white">
-                {left === Infinity ? '∞' : left}
-              </span>
-            </button>
+            />
           )
         })}
-        <button
-          type="button"
-          onClick={() => (costsLife ? setConfirm('restart') : startLevel(level.n))}
-          className="flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-2xl bg-black/25 text-[11px] font-bold text-white sm:text-xs"
-        >
-          <RotateCcw className="size-5" />
-          Restart
-        </button>
       </div>
+
+      {/* gear menu */}
+      <Modal open={menuOpen} onClose={() => setMenuOpen(false)} title="Game menu" size="sm">
+        <div className="grid gap-2.5">
+          <ChunkyButton tone="purple" onClick={() => update({ sound: !settings.sound })}>
+            {settings.sound ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />} Sound {settings.sound ? 'on' : 'off'}
+          </ChunkyButton>
+          <ChunkyButton tone="yellow" onClick={restart}>
+            <RotateCcw className="size-5" /> Restart level
+          </ChunkyButton>
+          <ChunkyButton tone="purple" onClick={() => {
+              setMenuOpen(false)
+              if (costsLife) setConfirm('leave')
+              else setScreen('home')
+            }}>
+            Home
+          </ChunkyButton>
+          <details className="rounded-2xl bg-ink-900/60 p-3 text-sm text-ink-200">
+            <summary className="cursor-pointer font-semibold text-ink-100">How to play</summary>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>Tap a truck to send its top group of same-coloured cubes onto the conveyor.</li>
+              <li>Cubes drop into the first truck they pass that is empty or has the same colour on top.</li>
+              <li>The conveyor has limited space: a group that does not fit means Out of Space.</li>
+            </ul>
+          </details>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={confirm !== null}

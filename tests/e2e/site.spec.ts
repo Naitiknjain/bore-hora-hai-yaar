@@ -124,6 +124,13 @@ test.describe('chakkar cubes', () => {
     await page.getByRole('button', { name: /^Level \d+$/ }).click()
     for (const name of ['Undo', 'Shuffle', 'Extra Truck', '+1 Slot']) await expect(page.getByRole('button', { name: `${name}, 2 left`, exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: /Hint/ })).toHaveCount(0)
+    // gear menu holds sound, restart and home; nothing started yet so restart is free
+    await page.getByRole('button', { name: 'Game menu' }).click()
+    const menu = page.getByRole('dialog', { name: 'Game menu' })
+    await expect(menu.getByRole('button', { name: /^Sound (on|off)$/ })).toBeVisible()
+    await menu.getByRole('button', { name: 'Restart level' }).click()
+    await expect(menu).toBeHidden()
+    await expectNoHorizontalOverflow(page)
     const trucks = page.locator('svg[aria-label="Chakkar Cubes board"] g[role=button]')
     const counter = page.getByTestId('conveyor-count')
     const outOfSpace = page.getByRole('dialog', { name: 'Out of Space' })
