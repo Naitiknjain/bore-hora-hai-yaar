@@ -96,6 +96,27 @@ test.describe('site', () => {
 })
 
 test.describe('chakkar cubes', () => {
+  test('cube stream canvas lines up exactly with the drawn board', async ({ page }) => {
+    await seedPlayer(page)
+    await page.goto('/games/loop-sort')
+    await page.getByRole('button', { name: /^Level \d+$/ }).click()
+    const fit = await page.evaluate(() => {
+      const svg = document.querySelector('svg[aria-label="Chakkar Cubes board"]') as SVGSVGElement
+      const canvas = document.querySelector('[data-testid="cube-stream"]') as HTMLCanvasElement
+      const r = svg.getBoundingClientRect()
+      const c = canvas.getBoundingClientRect()
+      const vb = svg.viewBox.baseVal
+      const k = Math.min(r.width / vb.width, r.height / vb.height)
+      return {
+        dx: Math.abs(c.left - (r.left + (r.width - vb.width * k) / 2)),
+        dy: Math.abs(c.top - (r.top + (r.height - vb.height * k) / 2)),
+        dw: Math.abs(c.width - vb.width * k),
+        dh: Math.abs(c.height - vb.height * k),
+      }
+    })
+    for (const v of Object.values(fit)) expect(v).toBeLessThan(1.5)
+  })
+
   test('four abilities (no Hint), conveyor never exceeds capacity, Out of Space -> Continue -> Give Up', async ({ page }) => {
     await seedPlayer(page)
     await page.goto('/games/loop-sort')
