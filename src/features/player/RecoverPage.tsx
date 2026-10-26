@@ -5,11 +5,13 @@ import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/Controls'
 import { friendlyError } from '../../lib/supabase'
 import { usePlayer } from './PlayerContext'
+import { takeRecoveryCode } from './recovery-handoff'
 
 export function RecoverPage() {
   const { backend, recover, player, online, status } = usePlayer()
   const navigate = useNavigate()
-  const [code, setCode] = useState('')
+  // a code pasted into the nickname box arrives here in memory (never via the URL)
+  const [code, setCode] = useState(() => takeRecoveryCode().toUpperCase())
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 

@@ -169,7 +169,7 @@ export default function SnakeBattle() {
   }
 
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col short:max-w-none short:flex-row short:items-center">
       <Hud>
         <HudStat label="Score" value={score} accent="#3ee08f" />
         <HudStat label="Best" value={Math.max(best, score)} />
@@ -177,12 +177,12 @@ export default function SnakeBattle() {
           <PauseButton onClick={() => setPaused(true)} />
         </div>
       </Hud>
-      <div ref={wrap}>
+      <div ref={wrap} className="flex min-h-0 min-w-0 flex-1 flex-col short:self-stretch">
         <CanvasStage ref={stage} width={W} height={H} maxHeight={showTouchControls ? '52dvh' : '70dvh'} label={`Snake board. Score ${score}`}>
           <PauseOverlay open={paused} onResume={() => setPaused(false)} onRestart={start} onHome={() => navigate('/games')} />
         </CanvasStage>
       </div>
-      {showTouchControls && <DPad className="mt-4" onDirection={turn} />}
+      {showTouchControls && <DPad className="mt-3" onDirection={turn} />}
     </div>
   )
 }

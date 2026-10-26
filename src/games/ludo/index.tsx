@@ -10,6 +10,7 @@ import { useLeaveGuard } from '../../hooks/useLeaveGuard'
 import { createRng, randomSeed } from '../../lib/random'
 import { sfx } from '../../lib/sound'
 import type { Difficulty, StoredResult } from '../../types'
+import { FitStage } from '../../components/game/FitStage'
 import {
   applyMove, BASE, botChoose, cellOf, COLORS, HOME, HOME_COLUMN, LAST_TRACK, newMatch, registerRoll, SAFE_SQUARES, standings, START_INDEX, TRACK,
   type LudoState, type SeatType,
@@ -102,7 +103,8 @@ function Board({ game, legal, onToken }: { game: LudoState; legal: number[] | nu
           aria-label={active ? `Move ${COLORS[p].name} token ${t + 1}` : undefined}
           onClick={() => active && onToken(t)}
           onKeyDown={(e) => active && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onToken(t))}
-          className={active ? 'cursor-pointer outline-none' : ''}
+          // always outline-none: a browser focus ring inside this tiny viewBox scales up into a giant black blob
+          className={active ? 'cursor-pointer outline-none' : 'outline-none'}
         >
           {active && <circle r={0.5} fill="none" stroke="#0b1020" strokeWidth={0.08} className="motion-safe:animate-pulse" />}
           <circle r={0.36} fill={COLORS[p].dark} />
@@ -313,12 +315,12 @@ export default function Ludo() {
   const humanTurn = game.seats[game.current] === 'human' && !game.over
 
   return (
-    <div className="mx-auto grid max-w-5xl gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="mx-auto w-full max-w-[min(100%,72dvh)]">
+    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-3 lg:flex-row lg:items-center lg:gap-4 short:flex-row"> 
+      <FitStage aspect={1} maxHeight="80dvh" className="lg:h-full">
         <Board game={game} legal={humanTurn ? (pending?.legal ?? null) : null} onToken={(t) => pending && humanTurn && commitMove(pending, t)} />
-      </div>
-      <div className="flex flex-col gap-3">
-        <div className="rounded-3xl border-2 bg-ink-800 p-4" style={{ borderColor: color.fill }}>
+      </FitStage>
+      <div className="flex shrink-0 flex-col gap-2 lg:w-[280px] lg:gap-3 short:max-h-full short:w-[260px] short:overflow-y-auto">
+        <div className="rounded-3xl border-2 bg-ink-800 p-3 lg:p-4" style={{ borderColor: color.fill }}>
           <div className="flex items-center gap-3">
             <Die value={lastRoll} rolling={rolling} color={color.fill} />
             <div className="min-w-0">
@@ -329,7 +331,7 @@ export default function Ludo() {
               {game.sixes > 0 && <div className="text-xs text-masala">Sixes in a row: {game.sixes}</div>}
             </div>
           </div>
-          <p className="mt-3 min-h-10 text-sm text-ink-200" aria-live="polite">
+          <p className="mt-2 min-h-10 text-sm text-ink-200 lg:mt-3 short:mt-1 short:min-h-0" aria-live="polite">
             {message}
           </p>
           <Button className="mt-2 w-full" size="lg" onClick={roll} disabled={!humanTurn || busy || !!pending || rolling} icon={<Dices className="size-5" />}>
@@ -338,14 +340,14 @@ export default function Ludo() {
         </div>
         <ul className="grid grid-cols-2 gap-2 text-sm">
           {game.seats.map((_, p) => (
-            <li key={p} className={`flex items-center gap-2 rounded-2xl px-3 py-2 ${p === game.current ? 'bg-ink-700' : 'bg-ink-800'}`}>
+            <li key={p} className={`flex items-center gap-2 rounded-2xl px-3 py-2 short:py-1 ${p === game.current ? 'bg-ink-700' : 'bg-ink-800'}`}>
               <span className="size-3 shrink-0 rounded-full" style={{ background: COLORS[p].fill }} aria-hidden />
               <span className="min-w-0 flex-1 truncate">{names[p]}</span>
               <span className="font-semibold tabular-nums">{game.tokens[p].filter((x) => x === HOME).length}/4</span>
             </li>
           ))}
         </ul>
-        <p className="flex items-center gap-1.5 text-xs text-ink-400">
+        <p className="hidden items-center gap-1.5 text-xs text-ink-400 lg:flex">
           <Star className="size-3.5" /> ★ and coloured start squares are safe. Tokens on the track: {game.tokens.flat().filter((x) => x >= 0 && x <= LAST_TRACK).length}
         </p>
         <Button variant="secondary" size="sm" icon={<RotateCcw className="size-4" />} onClick={() => setConfirmRestart(true)}>

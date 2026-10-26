@@ -54,6 +54,8 @@ export interface GameMeta {
   emoji: string
   featured?: boolean
   leaderboard?: LeaderboardConfig
+  /** Wide games ask the phone to rotate to landscape when they go fullscreen. */
+  orientation?: 'landscape'
   component: LazyExoticComponent<ComponentType>
 }
 

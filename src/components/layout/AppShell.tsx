@@ -65,12 +65,13 @@ export function AppShell() {
   }, [location.pathname])
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    // game pages are exactly one screen tall (no page scroll); the game header replaces the site bar there
+    <div className={`flex flex-col ${inGame ? 'h-dvh overflow-hidden' : 'min-h-dvh'}`}>
       <a href="#main" className="sr-only z-50 rounded bg-masala px-3 py-2 text-ink-950 focus:not-sr-only focus:fixed focus:left-2 focus:top-2">
         Skip to content
       </a>
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-ink-900/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
+      <header className={inGame ? 'shrink-0' : 'sticky top-0 z-40 border-b border-white/5 bg-ink-900/85 backdrop-blur-md'}>
+        <div className={`mx-auto h-16 max-w-6xl items-center justify-between gap-3 px-4 ${inGame ? 'hidden' : 'flex'}`}>
           <Logo />
           <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
             {NAV_ITEMS.map((item) => (
@@ -103,7 +104,10 @@ export function AppShell() {
         <RelinkBanner />
       </header>
 
-      <main id="main" className={`mx-auto w-full max-w-6xl flex-1 px-4 ${inGame ? 'pb-6 pt-3' : 'pb-28 pt-6 md:pb-12'}`}>
+      <main
+        id="main"
+        className={`mx-auto w-full max-w-6xl flex-1 ${inGame ? 'flex min-h-0 flex-col px-3 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-4' : 'px-4 pb-28 pt-6 md:pb-12'}`}
+      >
         <Suspense
           fallback={
             <div className="flex min-h-[40vh] items-center justify-center">

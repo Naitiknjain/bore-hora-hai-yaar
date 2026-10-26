@@ -214,7 +214,7 @@ export default function DinoRun() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col short:max-w-none short:flex-row short:items-center">
       <Hud>
         <HudStat label="Score" value={score} accent="#ff8a3d" />
         <HudStat label="Best" value={Math.max(best, score)} />
@@ -225,7 +225,7 @@ export default function DinoRun() {
       <CanvasStage ref={stage} width={W} height={H} label={`Dino run. Score ${score}`} onPointerDown={doJump}>
         <PauseOverlay open={paused} onResume={() => setPaused(false)} onRestart={start} onHome={() => navigate('/games')} />
       </CanvasStage>
-      <div className="mx-auto mt-4 grid max-w-sm grid-cols-2 gap-3">
+      <div className="mx-auto mt-3 grid w-full max-w-sm shrink-0 grid-cols-2 gap-3 short:order-first short:mx-0 short:mr-3 short:mt-0 short:w-28 short:grid-cols-1">
         <TouchButton label="Jump" onPress={doJump} className="min-h-16">
           <ArrowUp className="size-7" /> <span className="ml-1 font-semibold">Jump</span>
         </TouchButton>

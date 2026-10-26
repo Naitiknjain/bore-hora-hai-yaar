@@ -10,6 +10,7 @@ import { useResults } from '../../hooks/useResults'
 import { createRng, randomSeed } from '../../lib/random'
 import { sfx } from '../../lib/sound'
 import type { StoredResult } from '../../types'
+import { FitStage } from '../../components/game/FitStage'
 import { addRandomTile, canMove, maxTile, move, newGame, type Grid } from './logic'
 
 const TILE: Record<number, string> = {
@@ -145,7 +146,7 @@ export default function Game2048() {
   }
 
   return (
-    <div className="mx-auto max-w-md">
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col short:max-w-none short:flex-row short:items-center">
       <Hud>
         <HudStat label="Score" value={score.toLocaleString()} accent="#ffd23f" />
         <HudStat label="Best" value={best.toLocaleString()} />
@@ -155,7 +156,8 @@ export default function Game2048() {
           </Button>
         </div>
       </Hud>
-      <div ref={boardRef} className="game-surface relative rounded-3xl bg-ink-800 p-2.5" role="grid" aria-label={`2048 board, score ${score}`}>
+      <FitStage aspect={1}>
+      <div ref={boardRef} className="game-surface relative h-full w-full rounded-3xl bg-ink-800 p-2.5" role="grid" aria-label={`2048 board, score ${score}`}>
         <div className="grid grid-cols-4 gap-2.5">
           {grid.flatMap((row, r) =>
             row.map((v, c) => {
@@ -197,7 +199,8 @@ export default function Game2048() {
           </div>
         )}
       </div>
-      <p className="mt-3 text-center text-sm text-ink-400">Swipe the board or use arrow keys / WASD.</p>
+      </FitStage>
+      <p className="mt-2 shrink-0 text-center text-sm text-ink-400 short:hidden">Swipe the board or use arrow keys / WASD.</p>
       <ConfirmDialog
         open={confirmRestart}
         title="Start a new game?"

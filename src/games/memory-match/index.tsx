@@ -2,6 +2,7 @@ import { Pause, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { OptionGroup, PauseOverlay, ResultsScreen, StartScreen, useResultRecorder } from '../../components/game/GameShell'
+import { useBoxSize } from '../../components/game/FitStage'
 import { Hud, HudStat } from '../../components/game/TouchControls'
 import { Button } from '../../components/ui/Button'
 import { Segmented } from '../../components/ui/Controls'
@@ -18,6 +19,19 @@ import type { Difficulty, StoredResult } from '../../types'
 import { deal, isComplete, isMatch, PAIRS, resolve, reveal, winner, type MemoryState } from './logic'
 
 type Phase = 'menu' | 'playing' | 'over'
+
+const CARD_GAP = 8
+
+/** Column count that makes 3:4 cards as large as possible inside a w x h box. */
+function bestGrid(n: number, w: number, h: number) {
+  let best = { cols: 4, cardW: 0 }
+  for (let cols = 2; cols <= n; cols += 1) {
+    const rows = Math.ceil(n / cols)
+    const cardW = Math.min((w - CARD_GAP * (cols - 1)) / cols, ((h - CARD_GAP * (rows - 1)) / rows) * 0.75)
+    if (cardW > best.cardW) best = { cols, cardW }
+  }
+  return { cols: best.cols, cardW: Math.floor(Math.min(best.cardW, 150)) }
+}
 
 const GRID: Record<Difficulty, string> = {
   easy: 'grid-cols-4 sm:grid-cols-7',
@@ -43,6 +57,8 @@ export default function MemoryMatch() {
 
   const unfinished = phase === 'playing'
   const blocker = useLeaveGuard(unfinished)
+  const { box: cardBox, rect: cardRect } = useBoxSize()
+  const layout = cardRect && cardRect.h > 120 ? bestGrid(game.cards.length, cardRect.w, cardRect.h) : null
 
   function start() {
     setGame(deal(difficulty, players, rng.current))
@@ -193,7 +209,7 @@ export default function MemoryMatch() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col short:max-w-none short:flex-row short:items-center">
       <Hud>
         {players === 2 ? (
           <>
@@ -226,8 +242,13 @@ export default function MemoryMatch() {
         </div>
       </Hud>
 
-      <div className="relative rounded-3xl">
-        <div className={`grid gap-2 sm:gap-3 ${GRID[difficulty]}`} role="grid" aria-label="Memory cards">
+      <div ref={cardBox} className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center rounded-3xl short:self-stretch">
+        <div
+          className={layout ? 'grid' : `grid w-full gap-2 sm:gap-3 ${GRID[difficulty]}`}
+          style={layout ? { gap: CARD_GAP, gridTemplateColumns: `repeat(${layout.cols}, ${layout.cardW}px)` } : undefined}
+          role="grid"
+          aria-label="Memory cards"
+        >
           {game.cards.map((card, i) => {
             const faceUp = card.matched || game.open.includes(i)
             const ownerColor = card.owner === 1 ? '#ff5d8f' : '#4cc9f0'

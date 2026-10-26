@@ -24,6 +24,8 @@ export default function Pong() {
   const pointers = useRef(new Map<number, { side: 0 | 1; y: number }>())
   const jitter = useRef(0)
   const ended = useRef(false)
+  // the first serve waits for the player: tap/click the table or press a key
+  const ready = useRef(false)
   const stage = useRef<CanvasHandle>(null)
   const [phase, setPhase] = useState<Phase>('menu')
   const [mode, setMode] = useState<Mode>('cpu')
@@ -38,6 +40,7 @@ export default function Pong() {
     keys.current.clear()
     pointers.current.clear()
     ended.current = false
+    ready.current = false
     setScore([0, 0])
     setResult(null)
     setPaused(false)
@@ -64,7 +67,7 @@ export default function Pong() {
       right = movePaddle(s.right, aiTarget(s, difficulty, jitter.current), AI[difficulty].speed, dt)
     }
     s = { ...s, left: Math.max(PADDLE_H / 2, Math.min(H - PADDLE_H / 2, left)), right: Math.max(PADDLE_H / 2, Math.min(H - PADDLE_H / 2, right)) }
-    const res = stepBall(s, dt)
+    const res = ready.current ? stepBall(s, dt) : { state: s, scored: null, hit: false, wall: false }
     s = res.state
     if (res.hit) sfx.hit()
     else if (res.wall) sfx.click()
@@ -115,6 +118,11 @@ export default function Pong() {
     ctx.beginPath()
     ctx.arc(s.ball.x, s.ball.y, BALL / 2 + 1, 0, Math.PI * 2)
     ctx.fill()
+    if (!ready.current) {
+      ctx.font = '700 26px "Baloo 2", system-ui'
+      ctx.fillStyle = '#ffd23f'
+      ctx.fillText('Tap the table or press any key to serve', W / 2, H / 2 + 56)
+    }
   }
 
   useEffect(() => {
@@ -123,6 +131,7 @@ export default function Pong() {
 
   useKeyDown((e) => {
     if (phase !== 'playing') return false
+    if (!ready.current && !paused && e.key !== 'Escape' && e.key !== 'p' && e.key !== 'P') ready.current = true
     if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
       setPaused((p) => !p)
       return true
@@ -145,6 +154,7 @@ export default function Pong() {
   const pointerSide = (x: number): 0 | 1 => (mode === 'cpu' ? 0 : x < W / 2 ? 0 : 1)
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.type === 'pointermove' && !pointers.current.has(e.pointerId)) return
+    if (e.type === 'pointerdown') ready.current = true
     const p = stage.current!.toLogical(e.clientX, e.clientY)
     if (e.type === 'pointerdown') (e.target as HTMLElement).setPointerCapture(e.pointerId)
     const existing = pointers.current.get(e.pointerId)
@@ -224,7 +234,7 @@ export default function Pong() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col short:max-w-none short:flex-row short:items-center">
       <Hud>
         <HudStat label={names[0]} value={score[0]} accent="#4cc9f0" />
         <HudStat label={names[1]} value={score[1]} accent="#ff5d8f" />
@@ -244,7 +254,7 @@ export default function Pong() {
       >
         <PauseOverlay open={paused} onResume={() => setPaused(false)} onRestart={start} onHome={() => navigate('/games')} />
       </CanvasStage>
-      <p className="mt-3 text-center text-sm text-ink-400">Rotate your phone sideways for a bigger table.</p>
+      <p className="mt-2 shrink-0 text-center text-sm text-ink-400 landscape:hidden">Rotate your phone sideways (or tap fullscreen) for a bigger table.</p>
     </div>
   )
 }

@@ -151,7 +151,7 @@ export default function BrickBreaker() {
       ctx.fillStyle = 'rgba(238,240,248,0.75)'
       ctx.font = '600 18px Inter, system-ui'
       ctx.textAlign = 'center'
-      ctx.fillText(showTouchControls ? 'Tap launch to serve' : 'Press Space or click to launch', W / 2, H / 2 + 60)
+      ctx.fillText(showTouchControls ? 'Tap the screen to serve' : 'Press Space or click to launch', W / 2, H / 2 + 60)
     }
   }
 
@@ -197,7 +197,7 @@ export default function BrickBreaker() {
         instructions={
           <ul className="list-disc space-y-1 pl-5">
             <li>Move the paddle with the mouse, ←/→ (A/D), dragging on the board, or the on-screen buttons.</li>
-            <li>Space, click or Launch serves the ball. Bounce it into the bricks to break them.</li>
+            <li>Space, a click, a tap on the court or Launch serves the ball. Bounce it into the bricks to break them.</li>
             <li>Outlined bricks need two hits. Clear all {WALLS.length} walls to win.</li>
             <li>Miss the ball and you lose a life - {START_LIVES} lives in total.</li>
           </ul>
@@ -225,7 +225,7 @@ export default function BrickBreaker() {
   }
 
   return (
-    <div className="mx-auto max-w-lg">
+    <div className="mx-auto flex min-h-0 w-full max-w-lg flex-1 flex-col short:max-w-none short:flex-row short:items-center">
       <Hud>
         <HudStat label="Score" value={score.toLocaleString()} accent="#a77dff" />
         <HudStat label="Lives" value={'❤️'.repeat(Math.max(0, lives)) || '-'} />
@@ -242,18 +242,18 @@ export default function BrickBreaker() {
         label={`Brick breaker. Score ${score}, ${lives} lives`}
         onPointerDown={(e) => {
           followPointer(e)
-          if (e.pointerType === 'mouse') fire()
+          fire() // a click or a tap on the court serves the ball (no-op while it is already moving)
         }}
         onPointerMove={followPointer}
       >
         <PauseOverlay open={paused} onResume={() => setPaused(false)} onRestart={start} onHome={() => navigate('/games')} />
       </CanvasStage>
       {showTouchControls && (
-        <div className="mx-auto mt-3 grid max-w-sm grid-cols-3 gap-2">
+        <div className="mx-auto mt-3 grid w-full max-w-sm shrink-0 grid-cols-3 gap-2 short:order-first short:mx-0 short:mr-3 short:mt-0 short:w-36 short:grid-cols-2">
           <TouchButton label="Move left" onPress={() => (touchDir.current = -1)} onRelease={() => (touchDir.current = 0)}>
             <ArrowLeft className="size-7" />
           </TouchButton>
-          <TouchButton label="Launch ball" onPress={fire}>
+          <TouchButton label="Launch ball" onPress={fire} className="short:order-first short:col-span-2">
             <Rocket className="size-6" />
           </TouchButton>
           <TouchButton label="Move right" onPress={() => (touchDir.current = 1)} onRelease={() => (touchDir.current = 0)}>

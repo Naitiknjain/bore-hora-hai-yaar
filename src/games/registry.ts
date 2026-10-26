@@ -90,6 +90,7 @@ export const GAMES: GameMeta[] = [
   },
   {
     id: 'dino-run',
+    orientation: 'landscape',
     name: 'Dino Run',
     tagline: 'Internet gaya? Dino bhaga!',
     description: 'Endless runner: jump cacti, duck under birds, survive as the speed increases.',
@@ -133,6 +134,7 @@ export const GAMES: GameMeta[] = [
   },
   {
     id: 'pong',
+    orientation: 'landscape',
     name: 'Pong',
     tagline: 'Ping-pong, retro style',
     description: 'The original paddle duel. Beat the computer or a friend sharing your screen.',
@@ -209,6 +211,7 @@ export const GAMES: GameMeta[] = [
   },
   {
     id: 'skater-boy',
+    orientation: 'landscape',
     name: 'Skater Boy',
     tagline: 'Town, jungle, kabristan - 90 levels',
     description: 'Side-scrolling skateboarding inspired by the classic: jump gaps, pull aerial tricks, land clean. 90 original levels across three worlds.',

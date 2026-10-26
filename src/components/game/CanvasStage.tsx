@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from 'react'
+import { useFitSize } from './FitStage'
 
 export interface CanvasHandle {
   ctx: () => CanvasRenderingContext2D | null
@@ -10,7 +11,7 @@ export interface CanvasHandle {
 interface Props {
   width: number
   height: number
-  /** Max CSS height, e.g. '70dvh'. The canvas keeps its aspect ratio. */
+  /** Height cap used only outside a sized play area, e.g. '70dvh'. Inside one, the canvas fills the space. */
   maxHeight?: string
   className?: string
   label: string
@@ -21,14 +22,15 @@ interface Props {
 }
 
 /**
- * Crisp, responsive canvas: draws in logical units, renders at devicePixelRatio,
- * and scales with CSS to fit the available width while preserving aspect ratio.
+ * Crisp, responsive canvas: draws in logical units, renders at devicePixelRatio, and scales to the
+ * largest size that fits the play area (width and height) while preserving aspect ratio.
  */
 export const CanvasStage = forwardRef<CanvasHandle, Props>(function CanvasStage(
   { width, height, maxHeight = '72dvh', className = '', label, children, onPointerDown, onPointerMove, onPointerUp },
   ref,
 ) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const { box, size } = useFitSize(width / height, maxHeight)
 
   useEffect(() => {
     const c = canvas.current
@@ -50,19 +52,23 @@ export const CanvasStage = forwardRef<CanvasHandle, Props>(function CanvasStage(
   }))
 
   return (
-    <div className={`relative mx-auto w-full overflow-hidden rounded-3xl ${className}`} style={{ maxWidth: `min(100%, calc(${maxHeight} * ${width / height}))` }}>
-      <canvas
-        ref={canvas}
-        role="img"
-        aria-label={label}
-        className="game-surface block h-auto w-full"
-        style={{ aspectRatio: `${width} / ${height}` }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onContextMenu={(e) => e.preventDefault()}
-      />
-      {children}
+    <div ref={box} className="flex min-h-0 w-full flex-1 items-center justify-center short:min-w-0 short:self-stretch">
+      <div
+        className={`relative shrink-0 overflow-hidden rounded-3xl ${className}`}
+        style={{ width: size?.w ?? '100%', height: size?.h ?? 'auto', aspectRatio: size ? undefined : `${width} / ${height}` }}
+      >
+        <canvas
+          ref={canvas}
+          role="img"
+          aria-label={label}
+          className="game-surface block h-full w-full"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onContextMenu={(e) => e.preventDefault()}
+        />
+        {children}
+      </div>
     </div>
   )
 })

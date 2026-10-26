@@ -214,7 +214,7 @@ export default function UdtaPanchi() {
   }
 
   return (
-    <div className="mx-auto max-w-md">
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col short:max-w-none short:flex-row short:items-center">
       <Hud>
         <HudStat label="Score" value={score} accent="#ffd23f" />
         <HudStat label="Best" value={Math.max(best, score)} />

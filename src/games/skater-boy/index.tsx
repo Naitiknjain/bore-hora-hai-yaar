@@ -507,8 +507,8 @@ export default function SkaterBoy() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col short:max-w-none short:flex-row short:items-center">
+      <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 short:order-last short:mb-0 short:ml-3 short:w-28 short:flex-col short:flex-nowrap short:items-stretch short:self-start">
         <HudStat label={WORLDS.find((x) => x.id === world)!.name} value={`Lv ${levelNo}`} />
         <HudStat label="Score" value={hud.score.toLocaleString()} accent="#ff8a3d" />
         <HudStat label="Coins" value={hud.coins} accent="#ffd23f" />
@@ -533,7 +533,7 @@ export default function SkaterBoy() {
         </PauseOverlay>
       </CanvasStage>
       {showTouchControls && (
-        <div className="mx-auto mt-3 grid max-w-lg grid-cols-3 gap-3">
+        <div className="mx-auto mt-3 grid w-full max-w-lg shrink-0 grid-cols-3 gap-3 short:order-first short:mx-0 short:mr-3 short:mt-0 short:w-24 short:grid-cols-1">
           <TouchButton label="Boost (hold)" onPress={() => press.boost(true)} onRelease={() => press.boost(false)} className="min-h-16">
             <ChevronsRight className="size-7" />
           </TouchButton>

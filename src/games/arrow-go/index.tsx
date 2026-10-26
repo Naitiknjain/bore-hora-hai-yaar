@@ -217,9 +217,9 @@ export default function ArrowGo() {
   const pad = 0.4
 
   return (
-    <div className="mx-auto max-w-2xl rounded-[2rem] bg-[#070b16] p-3 sm:p-5">
+    <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col rounded-[2rem] bg-[#070b16] p-3 sm:p-5 short:p-2">
       {/* compact status header like the reference */}
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <button type="button" onClick={() => setScreen('levels')} aria-label="Level list" className="inline-flex size-10 items-center justify-center rounded-xl bg-white/[0.06] text-ink-200 hover:bg-white/10">
           <ArrowLeft className="size-5" />
         </button>
@@ -243,10 +243,10 @@ export default function ArrowGo() {
         </button>
       </div>
 
-      <div className="relative mt-3">
+      <div className="relative mt-3 min-h-[200px] flex-1">
         <svg
           viewBox={`${-pad} ${-pad} ${level.width + pad * 2} ${level.height + pad * 2}`}
-          className="game-surface mx-auto block max-h-[66dvh] w-full"
+          className="game-surface absolute inset-0 block h-full w-full"
           role="group"
           aria-label={`Arrow board, ${live.length} arrows left`}
         >
@@ -319,7 +319,7 @@ export default function ArrowGo() {
         )}
       </div>
 
-      <div className="mt-3 flex items-center justify-center gap-3">
+      <div className="mt-3 flex shrink-0 items-center justify-center gap-3">
         <button
           type="button"
           onClick={() => setGuide((g) => !g)}
@@ -338,7 +338,7 @@ export default function ArrowGo() {
           <span className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-lal text-xs font-bold text-white">{hints}</span>
         </button>
       </div>
-      <p className="mt-3 text-center text-xs text-ink-500">
+      <p className="mt-2 shrink-0 text-center text-xs text-ink-500 short:hidden">
         Original levels generated for this site · <Link to="/leaderboards/arrow-go" className="underline">leaderboard</Link>
       </p>
     </div>

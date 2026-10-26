@@ -13,6 +13,7 @@ import { createRng, randomSeed } from '../../lib/random'
 import { formatDuration } from '../../lib/scoring'
 import { sfx } from '../../lib/sound'
 import type { Difficulty, StoredResult } from '../../types'
+import { FitStage } from '../../components/game/FitStage'
 import { box, col, conflicts, generatePuzzle, isSolved, row, type Grid, type Puzzle } from './logic'
 
 type Phase = 'menu' | 'loading' | 'playing' | 'over'
@@ -233,7 +234,7 @@ export default function Sudoku() {
   const remaining = (d: number) => 9 - values.filter((v) => v === d).length
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col short:flex-row">
       <Hud>
         <HudStat label="Time" value={formatDuration(watch.elapsed)} />
         <HudStat label="Mistakes" value={mistakes} accent={mistakes ? '#ff4d5e' : undefined} />
@@ -247,12 +248,12 @@ export default function Sudoku() {
           </Button>
         </div>
       </Hud>
-      <div className="flex flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center">
-        <div className="relative w-full max-w-[min(100%,34rem)]">
+      <div className="flex min-h-0 flex-1 flex-col items-center gap-3 lg:flex-row lg:justify-center lg:gap-4 short:flex-row short:self-stretch">
+        <FitStage aspect={1} className="lg:h-full">
           <div
             role="grid"
             aria-label="Sudoku board"
-            className={`grid aspect-square grid-cols-9 overflow-hidden rounded-2xl border-2 border-ink-400 bg-ink-400 ${paused ? 'blur-md' : ''}`}
+            className={`grid h-full w-full grid-cols-9 overflow-hidden rounded-2xl border-2 border-ink-400 bg-ink-400 ${paused ? 'blur-md' : ''}`}
           >
             {values.map((v, i) => {
               const given = isGiven(i)
@@ -295,10 +296,10 @@ export default function Sudoku() {
             })}
           </div>
           <PauseOverlay open={paused} onResume={() => (setPaused(false), watch.start())} onHome={() => navigate('/games')} />
-        </div>
+        </FitStage>
 
-        <div className="w-full max-w-[34rem] lg:w-72">
-          <div className="grid grid-cols-9 gap-1.5 lg:grid-cols-3 lg:gap-2">
+        <div className="w-full max-w-[34rem] shrink-0 lg:w-72 short:max-h-full short:w-56 short:overflow-y-auto">
+          <div className="grid grid-cols-9 gap-1.5 lg:grid-cols-3 lg:gap-2 short:grid-cols-3">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
               <button
                 key={d}

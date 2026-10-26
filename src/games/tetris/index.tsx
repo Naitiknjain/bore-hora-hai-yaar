@@ -295,14 +295,14 @@ export default function Tetris() {
   }
 
   return (
-    <div className="mx-auto flex max-w-xl flex-col items-center">
-      <div className="flex w-full items-start justify-center gap-3">
-        <div className="w-full max-w-[min(100%,calc(62dvh*0.5))] flex-1">
+    <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col items-center short:max-w-none short:flex-row">
+      <div className="flex min-h-0 w-full flex-1 items-stretch justify-center gap-3 short:self-stretch">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <CanvasStage ref={stage} width={W} height={H} maxHeight={showTouchControls ? '58dvh' : '76dvh'} label={`Tetris board. Score ${hud.score}`}>
             <PauseOverlay open={paused} onResume={() => setPaused(false)} onRestart={start} onHome={() => navigate('/games')} />
           </CanvasStage>
         </div>
-        <div className="flex w-24 shrink-0 flex-col gap-2 sm:w-32">
+        <div className="flex w-24 shrink-0 flex-col gap-2 overflow-y-auto sm:w-32 short:w-28">
           <div className="rounded-2xl bg-ink-800 p-2 text-center">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">Next</div>
             <div className="mt-1 flex h-12 items-center justify-center">
@@ -311,13 +311,16 @@ export default function Tetris() {
           </div>
           <HudStat label="Score" value={hud.score.toLocaleString()} accent="#4cc9f0" />
           <HudStat label="Lines" value={hud.lines} />
-          <HudStat label="Level" value={hud.level} />
-          <HudStat label="Best" value={Math.max(best, hud.score).toLocaleString()} />
+          {/* less important on short landscape screens, where the column must keep Pause visible */}
+          <div className="flex flex-col gap-2 short:hidden">
+            <HudStat label="Level" value={hud.level} />
+            <HudStat label="Best" value={Math.max(best, hud.score).toLocaleString()} />
+          </div>
           <PauseButton onClick={() => setPaused(true)} />
         </div>
       </div>
       {showTouchControls && (
-        <div className="mt-3 grid w-full max-w-sm grid-cols-5 gap-2">
+        <div className="mt-3 grid w-full max-w-sm shrink-0 grid-cols-5 gap-2 short:order-first short:mr-3 short:mt-0 short:w-48 short:grid-cols-3">
           <TouchButton label="Move left" onPress={act.left}>
             <ArrowLeft className="size-6" />
           </TouchButton>

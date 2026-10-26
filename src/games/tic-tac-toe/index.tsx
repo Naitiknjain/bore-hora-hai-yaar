@@ -8,6 +8,7 @@ import { createRng, randomSeed } from '../../lib/random'
 import { sfx } from '../../lib/sound'
 import type { Difficulty, StoredResult } from '../../types'
 import { aiMove, emptyBoard, isFull, other, play, winner, type Board, type Mark } from './logic'
+import { FitStage } from '../../components/game/FitStage'
 
 type Mode = 'cpu' | 'local'
 type Phase = 'menu' | 'playing' | 'over'
@@ -167,11 +168,12 @@ export default function TicTacToe() {
   const status = w ? `${names[w.mark]} wins!` : draw ? 'Draw!' : cpuTurn ? 'Computer is thinking...' : `${names[turn]}'s turn (${turn})`
 
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center">
-      <p className="mb-4 font-display text-2xl font-bold" aria-live="polite">
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col items-center short:max-w-none short:flex-row short:justify-center short:gap-4">
+      <p className="mb-3 shrink-0 font-display text-2xl font-bold short:mb-0 short:w-40 short:text-xl" aria-live="polite">
         {status}
       </p>
-      <div role="grid" aria-label="Tic-tac-toe board" className="grid w-full max-w-[min(100%,26rem)] grid-cols-3 gap-2.5">
+      <FitStage aspect={1} className="max-w-[26rem]">
+      <div role="grid" aria-label="Tic-tac-toe board" className="grid h-full w-full grid-cols-3 grid-rows-3 gap-2.5">
         {board.map((cell, i) => {
           const inLine = w?.line.includes(i)
           return (
@@ -182,7 +184,7 @@ export default function TicTacToe() {
               aria-label={`Cell ${i + 1}: ${cell ?? 'empty'}`}
               disabled={cell !== null || !!w || draw || cpuTurn}
               onClick={() => move(i)}
-              className={`flex aspect-square items-center justify-center rounded-3xl font-display text-6xl font-extrabold transition sm:text-7xl ${
+              className={`flex items-center justify-center rounded-3xl font-display text-6xl font-extrabold transition sm:text-7xl ${
                 inLine ? 'bg-masala/25' : 'bg-ink-800 hover:enabled:bg-ink-700'
               } disabled:cursor-default`}
             >
@@ -191,7 +193,8 @@ export default function TicTacToe() {
           )
         })}
       </div>
-      <div className="mt-5 flex gap-2">
+      </FitStage>
+      <div className="mt-4 flex shrink-0 gap-2 short:mt-0 short:flex-col">
         <Button variant="secondary" icon={<RotateCcw className="size-4" />} onClick={start}>
           Restart
         </Button>

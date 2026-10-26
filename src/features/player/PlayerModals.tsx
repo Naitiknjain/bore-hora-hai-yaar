@@ -1,12 +1,23 @@
 import { Check, Copy, Download, KeyRound, ShieldAlert } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { friendlyError } from '../../lib/supabase'
-import { usePlayer, validateNickname } from './PlayerContext'
+import { looksLikePlayerCode, usePlayer, validateNickname } from './PlayerContext'
+import { handOffRecoveryCode } from './recovery-handoff'
 
-export function NicknameField({ value, onChange, id = 'nickname' }: { value: string; onChange: (v: string) => void; id?: string }) {
+interface NicknameFieldProps {
+  value: string
+  onChange: (v: string) => void
+  id?: string
+  /** Called with the full pasted text when a player code is pasted (before the 20-character limit cuts it). */
+  onCodePaste?: (code: string) => void
+}
+
+export function NicknameField({ value, onChange, id = 'nickname', onCodePaste }: NicknameFieldProps) {
+  const [pastedCode, setPastedCode] = useState(false)
+  const codeLike = pastedCode || looksLikePlayerCode(value)
   return (
     <div>
       <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-ink-200">
@@ -17,11 +28,35 @@ export function NicknameField({ value, onChange, id = 'nickname' }: { value: str
         value={value}
         maxLength={20}
         autoComplete="nickname"
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          setPastedCode(false)
+          onChange(e.target.value)
+        }}
+        onPaste={(e) => {
+          const text = e.clipboardData.getData('text')
+          if (!looksLikePlayerCode(text)) return
+          // never let a secret code become a (public) nickname
+          e.preventDefault()
+          if (onCodePaste) onCodePaste(text.trim())
+          else setPastedCode(true)
+        }}
+        aria-describedby={`${id}-hint`}
         placeholder="e.g. Pappu Gamer"
         className="min-h-12 w-full rounded-2xl border border-ink-600 bg-ink-900 px-4 text-lg text-ink-100 placeholder:text-ink-500 focus:border-masala focus:outline-none"
       />
-      <p className="mt-1 text-xs text-ink-400">2-20 characters. Nicknames don't need to be unique.</p>
+      {codeLike ? (
+        <p id={`${id}-hint`} role="alert" className="mt-1 text-xs text-lal">
+          That looks like a private player code. Never use it as a nickname - to restore a profile, use{' '}
+          <Link to="/recover" className="font-semibold underline">
+            Recover player
+          </Link>
+          .
+        </p>
+      ) : (
+        <p id={`${id}-hint`} className="mt-1 text-xs text-ink-400">
+          2-20 characters. Nicknames don't need to be unique.
+        </p>
+      )}
     </div>
   )
 }
@@ -29,6 +64,7 @@ export function NicknameField({ value, onChange, id = 'nickname' }: { value: str
 export function OnboardingModal() {
   const { status, createPlayer, backend } = usePlayer()
   const location = useLocation()
+  const navigate = useNavigate()
   const [nick, setNick] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -37,6 +73,10 @@ export function OnboardingModal() {
 
   async function submit(e: FormEvent) {
     e.preventDefault()
+    if (looksLikePlayerCode(nick)) {
+      setError('That is a player code, not a nickname. Use "Use your player code" below to restore your profile.')
+      return
+    }
     if (!validateNickname(nick)) {
       setError('Nickname must be 2-20 characters (no < or >).')
       return
@@ -59,7 +99,18 @@ export function OnboardingModal() {
           Bore ho rahe ho? Perfect jagah. Pick a nickname to start playing - no email, no password.
           {backend ? ' We will give you a private player code to use your profile on other devices.' : ''}
         </p>
-        <NicknameField value={nick} onChange={setNick} />
+        <NicknameField
+          value={nick}
+          onChange={setNick}
+          onCodePaste={
+            backend
+              ? (code) => {
+                  handOffRecoveryCode(code)
+                  navigate('/recover')
+                }
+              : undefined
+          }
+        />
         {error && (
           <p role="alert" className="text-sm text-lal">
             {error}

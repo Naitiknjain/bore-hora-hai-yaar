@@ -37,9 +37,19 @@ const PlayerContext = createContext<PlayerCtx | null>(null)
 
 const NICK_RE = /^[^<>\p{Cc}]{2,20}$/u
 
+/**
+ * True for text that looks like a private player code (BHHY-XXXX-..., or 16+ code symbols in dash-separated
+ * groups). Such text must never become a public nickname: that would leak most of the secret code.
+ */
+export function looksLikePlayerCode(raw: string): boolean {
+  const t = raw.trim().toUpperCase()
+  if (/^BHHY[\s-]*[0-9A-Z]{2,}/.test(t)) return true
+  return /^[0-9A-Z]{4}([\s-]+[0-9A-Z]{4}){2,}[\s-]*$/.test(t)
+}
+
 export function validateNickname(raw: string): string | null {
   const nick = raw.trim().replace(/\s+/g, ' ')
-  return NICK_RE.test(nick) ? nick : null
+  return NICK_RE.test(nick) && !looksLikePlayerCode(nick) ? nick : null
 }
 
 /** Re-keys locally stored data when an offline-created player gets its server id. */

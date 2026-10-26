@@ -44,7 +44,7 @@ export function TouchButton({
 export function DPad({ onDirection, className = '' }: { onDirection: (d: SwipeDir) => void; className?: string }) {
   const cls = 'size-16'
   return (
-    <div className={`mx-auto grid w-max grid-cols-3 gap-2 ${className}`} aria-label="Direction pad">
+    <div className={`mx-auto grid w-max shrink-0 grid-cols-3 gap-2 short:order-first short:mx-0 short:mr-3 short:mt-0 short:self-center ${className}`} aria-label="Direction pad">
       <span />
       <TouchButton label="Up" className={cls} onPress={() => onDirection('up')}>
         <ArrowUp className="size-7" />
@@ -64,7 +64,9 @@ export function DPad({ onDirection, className = '' }: { onDirection: (d: SwipeDi
 }
 
 export function Hud({ children }: { children: ReactNode }) {
-  return <div className="mx-auto mb-3 flex w-full max-w-3xl flex-wrap items-center gap-2">{children}</div>
+  return <div className="mx-auto mb-2 flex w-full max-w-3xl shrink-0 flex-wrap items-center gap-2 sm:mb-3 short:order-last short:mx-0 short:mb-0 short:ml-3 short:w-28 short:flex-col short:flex-nowrap short:items-stretch short:self-start">
+      {children}
+    </div>
 }
 
 export function HudStat({ label, value, accent }: { label: string; value: ReactNode; accent?: string }) {
