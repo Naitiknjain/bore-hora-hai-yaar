@@ -98,3 +98,76 @@ test.describe('site', () => {
     await expect(page).toHaveURL(/memory-match/)
   })
 })
+
+test.describe('chakkar cubes', () => {
+  test('cube stream canvas lines up exactly with the drawn board', async ({ page }) => {
+    await seedPlayer(page)
+    await page.goto('/games/loop-sort')
+    await page.getByRole('button', { name: /^Level \d+$/ }).click()
+    const fit = await page.evaluate(() => {
+      const svg = document.querySelector('svg[aria-label="Chakkar Cubes board"]') as SVGSVGElement
+      const canvas = document.querySelector('[data-testid="cube-stream"]') as HTMLCanvasElement
+      const r = svg.getBoundingClientRect()
+      const c = canvas.getBoundingClientRect()
+      const vb = svg.viewBox.baseVal
+      const k = Math.min(r.width / vb.width, r.height / vb.height)
+      return {
+        dx: Math.abs(c.left - (r.left + (r.width - vb.width * k) / 2)),
+        dy: Math.abs(c.top - (r.top + (r.height - vb.height * k) / 2)),
+        dw: Math.abs(c.width - vb.width * k),
+        dh: Math.abs(c.height - vb.height * k),
+      }
+    })
+    for (const v of Object.values(fit)) expect(v).toBeLessThan(1.5)
+    // the whole play screen (HUD, board, abilities) fits without vertical scrolling
+    const overflow = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+    expect(overflow).toBeLessThanOrEqual(1)
+  })
+
+  test('four abilities (no Hint), conveyor never exceeds capacity, Out of Space -> Continue -> Give Up', async ({ page }) => {
+    await seedPlayer(page)
+    await page.goto('/games/loop-sort')
+    await expect(page.getByRole('heading', { name: 'Chakkar Cubes' }).first()).toBeVisible()
+    await page.getByRole('button', { name: /^Level \d+$/ }).click()
+    for (const name of ['Undo', 'Shuffle', 'Extra Truck', '+1 Slot']) await expect(page.getByRole('button', { name: `${name}, 2 left`, exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Hint/ })).toHaveCount(0)
+    // gear menu holds sound, restart and home; nothing started yet so restart is free
+    await page.getByRole('button', { name: 'Game menu' }).click()
+    const menu = page.getByRole('dialog', { name: 'Game menu' })
+    await expect(menu.getByRole('button', { name: /^Sound (on|off)$/ })).toBeVisible()
+    await menu.getByRole('button', { name: 'Restart level' }).click()
+    await expect(menu).toBeHidden()
+    await expectNoHorizontalOverflow(page)
+    const trucks = page.locator('svg[aria-label="Chakkar Cubes board"] g[role=button]')
+    const counter = page.getByTestId('conveyor-count')
+    const outOfSpace = page.getByRole('dialog', { name: 'Out of Space' })
+    const won = page.getByRole('dialog', { name: 'Level complete' })
+    let sawOutOfSpace = false
+    for (let i = 0; i < 80; i += 1) {
+      const n = await trucks.count()
+      await trucks.nth((i * 3) % n).dispatchEvent('click')
+      const [used, cap] = (await counter.innerText()).trim().split('/').map(Number)
+      expect(used).toBeLessThanOrEqual(cap)
+      if (await outOfSpace.isVisible()) {
+        sawOutOfSpace = true
+        break
+      }
+      if (await won.isVisible()) break
+    }
+    if (sawOutOfSpace) {
+      await outOfSpace.getByRole('button', { name: /^Continue/ }).click()
+      await expect(outOfSpace).toBeHidden()
+      // a second Out of Space offers no free continue; give up ends the attempt
+      for (let i = 0; i < 120 && !(await outOfSpace.isVisible()) && !(await won.isVisible()); i += 1) {
+        await trucks.nth((i * 5) % (await trucks.count())).dispatchEvent('click')
+      }
+      if (await outOfSpace.isVisible()) {
+        await expect(outOfSpace.getByRole('button', { name: /^Continue/ })).toHaveCount(0)
+        await outOfSpace.getByRole('button', { name: /^Give Up/ }).click()
+        await expect(page.getByRole('dialog', { name: 'Attempt over' })).toBeVisible()
+        await expect(page.getByText('You lost a life. 4 left.')).toBeVisible()
+      }
+    }
+    await expectNoHorizontalOverflow(page)
+  })
+})

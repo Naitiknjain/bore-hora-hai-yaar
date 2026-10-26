@@ -5,7 +5,7 @@ import { readJSON, writeJSON } from '../../lib/storage'
 import { ApiError, backendConfigured, rpc } from '../../lib/supabase'
 
 /**
- * Loop Sort account state.
+ * Chakkar Cubes (internal id loop-sort) account state.
  *
  * Online (backend configured + registered player): the server owns lives, regeneration
  * (server clock), admin sessions and completed levels. Results are sent as idempotent events;
@@ -170,7 +170,7 @@ export function useLoopAccount() {
           if (!rest.length) break
         }
       } catch (err) {
-        if (!(err instanceof ApiError && err.code === 'network')) setError('Could not reach the Loop Sort server - playing with your last known lives.')
+        if (!(err instanceof ApiError && err.code === 'network')) setError('Could not reach the Chakkar Cubes server - playing with your last known lives.')
       }
     })()
     // assign first, clear after: a synchronous finish must never leave the marker stuck

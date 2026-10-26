@@ -87,30 +87,41 @@ Type the sentence exactly; correct characters move your car. A wrong key turns r
 
 Leaderboard: completed races, per difficulty, WPM then accuracy. The server re-checks that WPM matches the formula.
 
-## 14. Loop Sort (inspired by Voodoo's "Loop Sort")
+## 14. Chakkar Cubes (internal id `loop-sort`)
 
-**What we could verify from the public Play Store listing and screenshots** (the referenced screenshot image itself was not provided to the build environment, so we worked from the public listing):
-- Tap a truck to send its cubes onto a looping conveyor; cubes are sorted automatically into trucks; the level clears when everything is sorted.
-- Purple trucks with 4 block slots around a looping belt; a header with level and a cube counter (e.g. "3/5"); hidden "?" blocks; curtains that open for a colour; ice blocks; barriers.
-- Player reviews mention the track clogging (= losing) and cubes going into "any open slot".
+An original truck-and-conveyor sorting puzzle. The name, artwork and all 60 level layouts are our own. The general idea is inspired by the conveyor-sorting genre; see `LoopSort_Analysis_Report.md` (outside the repo) for the research. The internal id stays `loop-sort`, so saved progress, links and database rows are unchanged.
 
-**Our implementation (documented interpretation):**
-- Trucks hold a stack (bottom → top) of up to 4 blocks. Tapping unloads the **top run of one colour** onto the belt, just ahead of the truck.
-- The belt moves continuously. Each block drops into the **first truck it passes** that has room and is empty or has the same colour on top.
-- 4 of one colour completes a truck, which drives away. Clear every block to win.
-- The header counter shows blocks on the belt / belt capacity. Taps that would overflow are refused ("Belt is full!").
-- **Losing (costs a life):** the belt is settled with blocks nobody can take, and no truck can be tapped (jammed). Leaving or restarting a level after the first tap also counts as a failed attempt (with confirmation).
-- Obstacles implemented: **hidden blocks** (from level 6 only the top block is visible) and **curtains** (a truck stays closed until a given colour is completed). Ice blocks and barriers are **not** implemented; we could not determine their exact behaviour from the listing.
-- Abilities per attempt (Normal Mode: 1 each; Admin: unlimited): **Undo** last tap, **+2 belt space**, **Hint** (a solver suggests a truck, or tells you the position is lost).
-- 60 **original** levels generated offline (`npm run levels:generate`), each verified by a solver and shipped with a winning solution that the tests replay. Colours grow from 2 to 6, belt capacity shrinks from 6 to 4, and hidden blocks and curtains appear later.
-- Visuals: purple gradient home screen, chunky multicolour title, a smiling truck drawn in SVG, cube piles on the belt. This is a close interpretation, **not** the original image or assets.
+**Rules** (`src/games/loop-sort/logic.ts`, `attempt.ts`):
+- Up to **12 upright trucks** around a portrait conveyor loop, like the reference Level 1. Up to 4 stand side by side inside the loop (fed by the top belt). Bigger levels get a second inside row (fed by the bottom belt) and up to 2 trucks above and 2 below the loop. Conveyor positions are evenly spaced, so cubes move at a constant speed. Each truck holds 4 cubes.
+- Tapped cubes **stream out one per conveyor step**, so each cube passes every truck downstream (no cube can skip a matching truck), and a truck never takes back cubes it is still sending out.
+- Tapping a truck sends its **whole top group of same-coloured cubes** onto the conveyor (observed in reference gameplay). The header counter includes cubes still streaming out.
+- Cubes ride the loop and drop into the first truck they pass that has room and is empty or has the same colour on top.
+- 4 cubes of one colour complete a truck, which stays in place marked ✓. Sort every cube to win.
+- The header shows **cubes on the conveyor / capacity**.
+- **Loss rule (confirmed by gameplay observation):** tapping a truck whose group doesn't fit into the remaining conveyor space opens **Out of Space**. Nothing is discarded, and the conveyor never exceeds its capacity.
+  - **Continue:** one free continue per attempt, adding +1 conveyor slot. The waiting move is replayed automatically if it now fits; otherwise play resumes untouched.
+  - **Use +1 Slot:** the ability can also rescue the screen.
+  - **Give Up:** ends the attempt and costs one life through the existing server event (no life in Admin Mode).
+- **No moves left** (nothing can be tapped and waiting cubes have nowhere to go): offers Extra Truck, Undo or Give Up.
+- Hidden cubes from level 6; curtains open once their colour is sorted.
 
-**Lives & modes**
-- Normal Mode: 5 lives, +1 every 20 minutes. Both are configurable in `private.settings`. With the backend, lives and regeneration timestamps are computed by Postgres `now()`, so changing the device clock does nothing. With no lives left, levels cannot be started; the next-life countdown is shown.
-- Admin Mode: Admin button → PIN modal → server verification → per-device admin session. Unlimited lives and abilities; any level can be opened directly. Opening a level never marks it completed; finishing it does.
-- Progress is shared: levels completed in Admin Mode stay completed in Normal Mode. Switching back to Normal resets lives to the maximum and resumes regeneration. Pending results are flushed before the switch, so they are judged in the right mode.
-- Separate storage: `loop_sort_progress` (completed levels, current level), `loop_sort_lives` (lives, regeneration anchor), `loop_sort_admin_sessions` (mode per device), `loop_sort_events` (idempotent results).
-- Local-only mode (no backend): lives use the device clock (cannot be protected) and Admin Mode is unavailable, because the PIN cannot be verified securely without a server.
+**Abilities:** Normal Mode gives 2 uses each per level; Admin Mode is unlimited. Admin still can't exceed 12 trucks or a conveyor larger than the loop.
+
+| Ability | Effect |
+|---|---|
+| Undo | Restores the board from before the last tap. Slots and trucks already added are kept |
+| Shuffle | Pick a truck; its cubes are reordered (always into a different order) |
+| Extra Truck | Opens an empty truck in a reserved spare dock |
+| +1 Slot | Conveyor capacity +1 |
+
+**Tuning:** `src/games/loop-sort/config.ts` holds the loss trigger (`'tap-exceeds-capacity'`, or the legacy `'jammed'`), ability counts, continues per attempt, slots per continue or ability, and the max trucks.
+
+**Levels:** 60 original levels from `npm run levels:generate`. They grow from 2 to 8 colours and from 3 to 10 trucks, and conveyor capacity shrinks from 8 to 5. Each is solved by a best-first solver and shipped with its solution, which the tests replay.
+
+**Lives & modes:** unchanged.
+- Normal Mode: lives on the server clock; you can't play at 0 lives.
+- Admin Mode: PIN-protected, with unlimited lives and abilities, and any level can be opened.
+- Switching back to Normal restores full lives and keeps all progress.
 
 ## 15. Arrow Go (inspired by "Amaze GO!" / the Arrow Go link)
 
