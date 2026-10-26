@@ -540,9 +540,9 @@ export default function LoopSort() {
   }
 
   return (
-    <div className={shell}>
+    <div className={`${shell} flex min-h-0 w-full flex-1 flex-col short:p-3`}>
       {/* HUD */}
-      <div className="flex items-center gap-1.5 min-[380px]:gap-2">
+      <div className="flex shrink-0 items-center gap-1.5 min-[380px]:gap-2">
         <RoundIconButton label="Back to Chakkar Cubes home" onClick={() => (costsLife ? setConfirm('leave') : setScreen('home'))}>
           <ArrowLeft className="size-5" strokeWidth={2.8} />
         </RoundIconButton>
@@ -565,8 +565,8 @@ export default function LoopSort() {
       </div>
 
       {/* board + abilities: stacked on phones, abilities in a column beside the board on wide screens */}
-      <div className="mt-3 lg:flex lg:items-center lg:justify-center lg:gap-8">
-        <div className="relative lg:min-w-0 lg:flex-1">
+      <div className="mt-3 flex min-h-0 flex-1 flex-col lg:flex-row lg:items-center lg:justify-center lg:gap-8 short:mt-2 short:flex-row short:items-center short:gap-3">
+        <div className="relative min-h-[240px] flex-1 lg:min-w-0 lg:self-stretch short:min-h-0 short:min-w-0 short:self-stretch">
           <LoopBoard
             state={board}
             items={items}
@@ -652,7 +652,7 @@ export default function LoopSort() {
         </div>
 
         {/* abilities */}
-        <div className="mt-3 grid grid-cols-4 gap-2 px-1 lg:mt-0 lg:w-24 lg:shrink-0 lg:grid-cols-1 lg:gap-5 lg:px-0">
+        <div className="mt-3 grid shrink-0 grid-cols-4 gap-2 px-1 lg:mt-0 lg:w-24 lg:grid-cols-1 lg:gap-5 lg:px-0 short:mt-0 short:w-20 short:grid-cols-1 short:gap-1 short:px-0">
           {abilities.map(({ id, icon }) => {
             const left = usesLeft(id, attempt.used[id], admin)
             const available = abilityAvailable(attempt, id)

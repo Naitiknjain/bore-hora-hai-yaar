@@ -45,7 +45,7 @@ export function AbilityButton({ icon, name, count, active, disabled, ...rest }: 
   return (
     <button type="button" disabled={disabled} className="group flex min-w-0 flex-col items-center gap-1 disabled:cursor-not-allowed" {...rest}>
       <span
-        className={`relative flex size-12 items-center min-[360px]:size-14 justify-center rounded-full border-[3px] text-white transition group-active:translate-y-0.5 min-[380px]:size-16 ${
+        className={`relative flex size-12 items-center min-[360px]:size-14 justify-center rounded-full border-[3px] text-white transition group-active:translate-y-0.5 min-[380px]:size-16 short:!size-11 ${
           active
             ? 'border-[#fff3b0] bg-gradient-to-b from-[#ffe066] to-[#f0a800] text-[#3a2200] shadow-[0_0_0_4px_rgba(255,210,63,0.35),inset_0_-4px_0_rgba(0,0,0,0.2),0_4px_0_#8a5a00]'
             : 'border-[#c3b3ff] bg-gradient-to-b from-[#9a78ff] to-[#5a34d4] shadow-[inset_0_-4px_0_rgba(0,0,0,0.3),0_4px_0_#2a1870]'
@@ -61,7 +61,7 @@ export function AbilityButton({ icon, name, count, active, disabled, ...rest }: 
           {count === Infinity ? '∞' : count}
         </span>
       </span>
-      <span className="max-w-full truncate text-[10px] font-bold min-[360px]:text-[11px] text-[#e6deff] sm:text-xs">{name}</span>
+      <span className="max-w-full truncate text-[10px] font-bold min-[360px]:text-[11px] short:hidden text-[#e6deff] sm:text-xs">{name}</span>
     </button>
   )
 }

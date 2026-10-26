@@ -114,11 +114,12 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
   onTruckRef.current = onTruck
   const handleTruck = useCallback((i: number) => onTruckRef.current(i), [])
   return (
-    <div className="relative">
+    // fills the play area's board slot; the SVG keeps its shape (letterboxed) and the cube canvas follows it
+    <div className="absolute inset-0">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${b.width} ${b.height}`}
-        className="game-surface mx-auto block max-h-[calc(100dvh-324px)] min-h-[240px] min-[380px]:max-h-[calc(100dvh-342px)] sm:max-h-[calc(100dvh-354px)] lg:max-h-[min(760px,calc(100dvh-262px))] w-full"
+        className="game-surface block h-full w-full"
         role="group"
         aria-label="Chakkar Cubes board"
       >
