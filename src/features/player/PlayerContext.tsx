@@ -43,7 +43,7 @@ const NICK_RE = /^[^<>\p{Cc}]{2,20}$/u
  */
 export function looksLikePlayerCode(raw: string): boolean {
   const t = raw.trim().toUpperCase()
-  if (/^BHHY[\s-]*[0-9A-Z]{2,}/.test(t)) return true
+  if (/^BHHY[\s-]*[0-9A-Z]{4}/.test(t)) return true
   return /^[0-9A-Z]{4}([\s-]+[0-9A-Z]{4}){2,}[\s-]*$/.test(t)
 }
 

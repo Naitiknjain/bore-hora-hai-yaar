@@ -56,6 +56,10 @@ test.describe('site', () => {
         await page.waitForTimeout(600)
         await expectNoHorizontalOverflow(page)
       }
+      // game pages are exactly one screen: the page itself never scrolls, and fullscreen is one tap away
+      const vertical = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+      expect(vertical).toBeLessThanOrEqual(1)
+      await expect(page.getByRole('button', { name: 'Fullscreen' })).toBeVisible()
       expect(errors).toEqual([])
     })
   }

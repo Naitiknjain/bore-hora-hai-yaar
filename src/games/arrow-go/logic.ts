@@ -1,4 +1,5 @@
 import { createRng, shuffle, type Rng } from '../../lib/random'
+import { PICTURES, rasterise, type Picture } from './pictures'
 
 /**
  * Arrow Go rules (our interpretation of the reference "free-path" arrow puzzle):
@@ -7,6 +8,7 @@ import { createRng, shuffle, type Rng } from '../../lib/random'
  *  - Tapping an arrow slides it off the board in its head direction - only if every cell from
  *    the head to the board edge is free of other arrows (its own body counts as an obstacle too).
  *  - A blocked tap costs a heart. Removing every arrow completes the level.
+ *  - Each level's arrows are packed into an original picture (see pictures.ts) that is revealed as they leave.
  */
 
 export type Dir = 'up' | 'down' | 'left' | 'right'
@@ -24,6 +26,10 @@ export interface Level {
   width: number
   height: number
   arrows: Arrow[]
+  /** the picture the arrows form; clearing them reveals it */
+  picture: { name: string; color: string }
+  /** every cell of the picture */
+  mask: Cell[]
 }
 
 export const TOTAL_LEVELS = 60
@@ -99,31 +105,38 @@ export function depth(arrows: Arrow[], width: number, height: number): number {
   return waves
 }
 
+/** Picture shown by level n: 30 pictures, then the same pictures again on denser grids. */
+export function pictureFor(n: number): Picture {
+  return PICTURES[(n - 1) % PICTURES.length]
+}
+
 export function levelSize(n: number): { width: number; height: number; maxLen: number } {
   const t = Math.min(1, (n - 1) / (TOTAL_LEVELS - 1))
-  const width = Math.round(4 + t * 7) // 4 .. 11
-  const height = Math.round(5 + t * 8) // 5 .. 13
-  const maxLen = Math.round(3 + t * 6) // 3 .. 9
+  const long = Math.round(9 + t * 13) // 9 .. 22 cells along the picture's long side
+  const { aspect } = pictureFor(n)
+  const width = aspect >= 1 ? long : Math.max(5, Math.round(long * aspect))
+  const height = aspect >= 1 ? Math.max(5, Math.round(long / aspect)) : long
+  const maxLen = Math.round(3 + t * 5) // 3 .. 8: many arrows make a dense picture
   return { width, height, maxLen }
 }
 
-function growArrow(start: Cell, occupied: Set<string>, width: number, height: number, maxLen: number, rng: Rng): Cell[] {
+function growArrow(start: Cell, free: (k: string) => boolean, maxLen: number, rng: Rng): Cell[] {
   const cells = [start]
   const used = new Set([key(start)])
   const target = 2 + Math.floor(rng() * (maxLen - 1))
   let straight: Dir | null = null
   while (cells.length < target) {
     const cur = cells[cells.length - 1]
-    // prefer continuing straight sometimes, which makes nicer long lanes
+    // continuing straight often makes the long lanes of the reference look
     const dirs = shuffle(rng, ['up', 'down', 'left', 'right'] as Dir[])
-    if (straight && rng() < 0.45) dirs.unshift(straight)
+    if (straight && rng() < 0.5) dirs.unshift(straight)
     let moved = false
     for (const d of dirs) {
       const v = VEC[d]
-      const n = { x: cur.x + v.x, y: cur.y + v.y }
-      const k = key(n)
-      if (n.x < 0 || n.y < 0 || n.x >= width || n.y >= height || occupied.has(k) || used.has(k)) continue
-      cells.push(n)
+      const nx = { x: cur.x + v.x, y: cur.y + v.y }
+      const k = key(nx)
+      if (!free(k) || used.has(k)) continue
+      cells.push(nx)
       used.add(k)
       straight = d
       moved = true
@@ -134,47 +147,88 @@ function growArrow(start: Cell, occupied: Set<string>, width: number, height: nu
   return cells
 }
 
-/** Deterministic, original level generator. Every level is verified solvable. */
+/** Arrows that greedy removal can never clear (cycles of blockers, or arrows curling into themselves). */
+function stuckArrows(arrows: Arrow[], width: number, height: number): Arrow[] {
+  let left = arrows.slice()
+  for (;;) {
+    const free = removableArrows(left, width, height)
+    if (!free.length) return left
+    const ids = new Set(free.map((a) => a.id))
+    left = left.filter((a) => !ids.has(a.id))
+  }
+}
+
+const adjacent = (a: Cell, b: Cell) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1
+
+/**
+ * Deterministic, original level generator: the level's picture is rasterised and packed densely with
+ * winding arrows, then deadlocks are repaired (reverse, split, or as a last resort remove an arrow)
+ * until greedy removal clears the board. Every level is verified solvable.
+ */
 export function generateLevel(n: number): Level {
+  const picture = pictureFor(n)
   const { width, height, maxLen } = levelSize(n)
+  const grid = rasterise(picture, width, height)
+  const mask: Cell[] = []
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (grid[y][x]) mask.push({ x, y })
+  const inMask = new Set(mask.map(key))
   const minDepth = n < 4 ? 1 : n < 15 ? 2 : n < 35 ? 3 : 4
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     const rng = createRng(n * 7919 + attempt * 104729 + 17)
     const occupied = new Set<string>()
     let arrows: Arrow[] = []
-    const fill = 0.62 + Math.min(0.25, n * 0.006)
-    let guard = 0
-    while (occupied.size < width * height * fill && guard < 400) {
-      guard += 1
-      const free: Cell[] = []
-      for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (!occupied.has(`${x},${y}`)) free.push({ x, y })
-      if (!free.length) break
-      const cells = growArrow(free[Math.floor(rng() * free.length)], occupied, width, height, maxLen, rng)
+    let nextId = 0
+    const leftovers: Cell[] = []
+    for (const c of shuffle(rng, mask.slice())) {
+      if (occupied.has(key(c))) continue
+      const cells = growArrow(c, (k) => inMask.has(k) && !occupied.has(k), maxLen, rng)
       if (cells.length < 2) {
-        occupied.add(key(cells[0])) // isolated cell: leave empty
+        leftovers.push(c)
         continue
       }
-      cells.forEach((c) => occupied.add(key(c)))
-      arrows.push({ id: arrows.length, cells, color: NEON[arrows.length % NEON.length] })
+      cells.forEach((x) => occupied.add(key(x)))
+      arrows.push({ id: nextId++, cells, color: '' })
     }
-    // repair: drop arrows that are permanently stuck (cycles or self-blocking) until solvable
-    for (;;) {
-      let left = arrows.slice()
-      for (;;) {
-        const free = removableArrows(left, width, height)
-        if (!free.length) break
-        const ids = new Set(free.map((a) => a.id))
-        left = left.filter((a) => !ids.has(a.id))
+    // single cells join a neighbouring arrow (as its new tail, or its new head) so the picture has no holes
+    for (const c of leftovers) {
+      if (occupied.has(key(c))) continue
+      const tailHost = arrows.find((a) => adjacent(a.cells[0], c))
+      if (tailHost) tailHost.cells.unshift(c)
+      else {
+        const headHost = arrows.find((a) => adjacent(a.cells[a.cells.length - 1], c))
+        if (!headHost) continue
+        headHost.cells.push(c)
       }
-      if (!left.length) break
-      const drop = left[Math.floor(rng() * left.length)]
-      arrows = arrows.filter((a) => a.id !== drop.id)
+      occupied.add(key(c))
     }
-    if (arrows.length >= Math.min(4 + n, 6 + n / 2) * 0.6 && depth(arrows, width, height) >= minDepth) {
-      // stable ids and colours after repair
-      arrows = arrows.map((a, i) => ({ ...a, id: i, color: NEON[i % NEON.length] }))
-      return { number: n, width, height, arrows }
+
+    const reversed = new Set<number>()
+    let ok = false
+    for (let repairs = 0; repairs < 600; repairs += 1) {
+      const stuck = stuckArrows(arrows, width, height)
+      if (!stuck.length) {
+        ok = true
+        break
+      }
+      const a = stuck[Math.floor(rng() * stuck.length)]
+      if (!reversed.has(a.id)) {
+        reversed.add(a.id)
+        arrows = arrows.map((x) => (x.id === a.id ? { ...x, cells: x.cells.slice().reverse() } : x))
+      } else if (a.cells.length >= 4) {
+        const cut = 2 + Math.floor(rng() * (a.cells.length - 3))
+        arrows = arrows.filter((x) => x.id !== a.id)
+        arrows.push({ id: nextId++, cells: a.cells.slice(0, cut), color: '' }, { id: nextId++, cells: a.cells.slice(cut), color: '' })
+      } else {
+        arrows = arrows.filter((x) => x.id !== a.id)
+      }
     }
+    if (!ok) continue
+    const covered = arrows.reduce((sum, a) => sum + a.cells.length, 0)
+    if (covered < mask.length * 0.88 || arrows.length < 2 || depth(arrows, width, height) < minDepth) continue
+    // stable ids and colours after repair
+    arrows = arrows.map((a, i) => ({ ...a, id: i, color: NEON[i % NEON.length] }))
+    return { number: n, width, height, arrows, picture: { name: picture.name, color: picture.color }, mask }
   }
   throw new Error(`could not generate level ${n}`)
 }
