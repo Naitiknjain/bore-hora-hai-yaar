@@ -1,6 +1,9 @@
 import { TRUCK_CAPACITY } from '../logic'
 import { Block3D, BLOCK_COLORS, shade } from './Block3D'
 
+/** Key / padlock colours for Lock & Key (one per key id). */
+export const KEY_COLORS = ['#ff8a2a', '#2fd67c', '#35c8f0']
+
 export function TruckGradients() {
   return (
     <>
@@ -55,6 +58,10 @@ interface Props {
   frozen?: boolean
   /** the ice just broke: shards fly off once */
   thawed?: boolean
+  /** coloured truck: the whole body is painted in this cube colour */
+  tint?: number
+  /** carries the key with this id (drawn on the hood) */
+  keyId?: number
 }
 
 /**
@@ -82,7 +89,9 @@ export function TruckSprite(props: Props) {
   )
 }
 
-function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, barrier, frozen, thawed, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
+function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, barrier, frozen, thawed, tint, keyId, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
+  // a coloured truck is painted in its colour; every other truck is lavender
+  const paint = tint === undefined ? null : BLOCK_COLORS[tint]
   const up = facing === 'up'
   const bodyX = x + w * 0.05
   const bodyW = w * 0.9
@@ -115,14 +124,14 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
     <g>
       {/* soft ground shadow, then the body's thickness and its lit top */}
       <rect x={bodyX + 3} y={y + depth + 5} width={bodyW} height={topH} rx={r} fill="rgba(6,2,28,0.4)" />
-      <rect x={bodyX} y={y + depth} width={bodyW} height={topH} rx={r} fill="#46358c" />
-      <rect x={bodyX} y={y} width={bodyW} height={topH} rx={r} fill="url(#cc-truck-body)" />
+      <rect x={bodyX} y={y + depth} width={bodyW} height={topH} rx={r} fill={paint ? shade(paint, -0.42) : '#46358c'} />
+      <rect x={bodyX} y={y} width={bodyW} height={topH} rx={r} fill={paint ? shade(paint, -0.05) : 'url(#cc-truck-body)'} />
       <rect x={bodyX + 1.5} y={y + 1.5} width={bodyW - 3} height={topH - 3} rx={r - 1.5} fill="none" stroke="rgba(236,228,255,0.5)" strokeWidth={1.5} />
       {/* flat hood at the belt end, with a seam towards the bed */}
-      <rect x={bodyX + wall * 0.5} y={hoodY + (up ? wall * 0.4 : 0)} width={bodyW - wall} height={hoodH - wall * 0.4} rx={r * 0.7} fill="url(#cc-truck-cab)" />
+      <rect x={bodyX + wall * 0.5} y={hoodY + (up ? wall * 0.4 : 0)} width={bodyW - wall} height={hoodH - wall * 0.4} rx={r * 0.7} fill={paint ? shade(paint, 0.28) : 'url(#cc-truck-cab)'} />
       <rect x={bodyX + wall} y={up ? y + hoodH : y + topH - hoodH - 1.2} width={bodyW - 2 * wall} height={1.2} fill="rgba(40,20,120,0.45)" />
       {/* recessed cargo bed */}
-      <rect x={bedX} y={bedY0} width={bedW} height={bedY1 - bedY0} rx={bedR} fill="url(#cc-truck-bed)" />
+      <rect x={bedX} y={bedY0} width={bedW} height={bedY1 - bedY0} rx={bedR} fill={paint ? shade(paint, -0.28) : 'url(#cc-truck-bed)'} />
       <rect x={bedX} y={bedY0} width={bedW} height={Math.max(2, slotH * 0.1)} rx={2} fill="rgba(20,8,70,0.3)" />
       {/* cargo */}
       {!done &&
@@ -152,6 +161,7 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
           // in front of the truck when there is room; sideways trucks sit close to the belt, so on the hood
           <Bollard key={side} cx={bodyX + bodyW / 2 + side * bodyW * 0.2} cy={turn ? hoodY + hoodH / 2 : up ? y - 9 : y + h + 5} r={Math.max(5, w * 0.085)} down={done} />
         ))}
+      {keyId !== undefined && <KeyIcon cx={bodyX + bodyW / 2} cy={hoodY + hoodH / 2} s={Math.min(bodyW * 0.62, hoodH * 1.5)} color={KEY_COLORS[keyId % KEY_COLORS.length]} />}
       {frozen && <Ice x={bodyX} y={y} w={bodyW} h={topH + depth} r={r} />}
       {thawed && <IceShards cx={bodyX + bodyW / 2} cy={y + topH / 2} spread={Math.max(bodyW, topH * 0.5)} />}
       {locked && <Curtain x={bodyX} y={y} w={bodyW} h={topH} r={r} color={BLOCK_COLORS[lockColor ?? 0]} />}
@@ -175,6 +185,27 @@ function Bollard({ cx, cy, r, down }: { cx: number; cy: number; r: number; down:
           <circle cx={cx - r * 0.12} cy={cy - 2.3} r={r * 0.12} fill="#fff6c8" />
         </>
       )}
+    </g>
+  )
+}
+
+/** A chunky key lying on the hood. */
+function KeyIcon({ cx, cy, s, color }: { cx: number; cy: number; s: number; color: string }) {
+  const r = s * 0.2
+  const x0 = cx - s / 2
+  return (
+    <g aria-hidden>
+      <g transform="translate(0 1.5)" opacity={0.35}>
+        <circle cx={x0 + r} cy={cy} r={r} fill="#100a2a" />
+        <rect x={x0 + r * 1.6} y={cy - r * 0.32} width={s - r * 1.8} height={r * 0.64} rx={r * 0.3} fill="#100a2a" />
+      </g>
+      <circle cx={x0 + r} cy={cy} r={r} fill={color} stroke={shade(color, -0.35)} strokeWidth={1.2} />
+      <circle cx={x0 + r} cy={cy} r={r * 0.42} fill={shade(color, -0.45)} />
+      <rect x={x0 + r * 1.7} y={cy - r * 0.32} width={s - r * 1.8} height={r * 0.64} rx={r * 0.3} fill={color} stroke={shade(color, -0.35)} strokeWidth={1} />
+      {[0.68, 0.86].map((f) => (
+        <rect key={f} x={x0 + s * f} y={cy} width={r * 0.5} height={r * 0.85} rx={r * 0.15} fill={color} stroke={shade(color, -0.35)} strokeWidth={1} />
+      ))}
+      <rect x={x0 + r * 1.9} y={cy - r * 0.22} width={(s - r * 2.2) * 0.6} height={r * 0.16} rx={r * 0.08} fill="rgba(255,255,255,0.55)" />
     </g>
   )
 }

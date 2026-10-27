@@ -334,4 +334,55 @@ describe('obstacles', () => {
       }
     }
   })
+
+  it('lock & key: emptying the key truck collects the key and opens the shutter', () => {
+    const def: LevelDef = { ...lvl([], 6), trucks: [{ blocks: [2], key: 0 }, { blocks: [1, 1], shutter: 0 }, { blocks: [] }] }
+    let s = initialState(def)
+    expect(tap(s, 1).error).toBe('shut')
+    s = settle(tap(s, 0).state)
+    expect(s.keys).toEqual([0])
+    expect(s.trucks[0].key).toBeUndefined()
+    expect(s.trucks[2].blocks).toEqual([2]) // the shut truck took nothing while it was shut
+    expect(tap(s, 1).error).toBeNull()
+  })
+
+  it('a shut truck takes no cubes', () => {
+    const def: LevelDef = { ...lvl([], 6), trucks: [{ blocks: [2] }, { blocks: [], shutter: 0 }, { blocks: [] }] }
+    const s = settle(tap(initialState(def), 0).state)
+    expect(s.trucks[1].blocks).toEqual([])
+    expect(s.trucks[2].blocks).toEqual([2])
+  })
+
+  it('coloured truck: only accepts its own colour', () => {
+    const def: LevelDef = { ...lvl([], 6), trucks: [{ blocks: [3, 2] }, { blocks: [], tag: 3 }, { blocks: [] }] }
+    let s = settle(tap(initialState(def), 0).state)
+    expect(s.trucks[1].blocks).toEqual([]) // the 2 rode past the coloured truck
+    expect(s.trucks[2].blocks).toEqual([2])
+    s = settle(tap(s, 0).state)
+    expect(s.trucks[1].blocks).toEqual([3])
+  })
+
+  it('rope: tied trucks cannot be tapped until one of them is sorted', () => {
+    const def: LevelDef = { ...lvl([], 6), trucks: [{ blocks: [1] }, { blocks: [1, 1, 1], rope: 0 }, { blocks: [2, 3], rope: 0 }, { blocks: [] }] }
+    let s = initialState(def)
+    expect(tap(s, 2).error).toBe('tied')
+    expect(tap(s, 1).error).toBe('tied')
+    s = settle(tap(s, 0).state) // the 4th 1 completes truck 1: the rope comes off
+    expect(s.trucks[1].done).toBe(true)
+    expect(s.cut).toEqual([0])
+    expect(tap(s, 2).error).toBeNull()
+  })
+
+  it('levels with lock & key, coloured trucks and ropes are winnable as stored', () => {
+    const has = (f: (t: LevelDef['trucks'][number]) => boolean) => LEVELS.filter((l) => l.trucks.some(f))
+    const lock = has((t) => t.shutter !== undefined)
+    const tag = has((t) => t.tag !== undefined)
+    const rope = has((t) => t.rope !== undefined)
+    for (const group of [lock, tag, rope]) expect(group.length).toBeGreaterThan(3)
+    for (const l of [...lock, ...tag, ...rope]) {
+      expect(replay(l, l.solution), `level ${l.n}`).toBe(true)
+      if (l.trucks.some((t) => t.shutter !== undefined)) expect(l.trucks.filter((t) => t.key !== undefined).length, `level ${l.n}`).toBe(1)
+      for (const t of l.trucks) if (t.tag !== undefined) expect(t.blocks, `level ${l.n}`).toEqual([])
+    }
+  })
 })

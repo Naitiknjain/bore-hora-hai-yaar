@@ -35,7 +35,7 @@ import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton, SlotPlusI
 const LEVELS = levelsData as LevelDef[]
 
 /** Obstacles get a short introduction card on the first level that uses them. */
-type Obstacle = 'barrier' | 'ice'
+type Obstacle = 'barrier' | 'ice' | 'lock' | 'tag' | 'rope'
 const OBSTACLES: Record<Obstacle, { title: string; emoji: string; text: string; has: (l: LevelDef) => boolean }> = {
   barrier: {
     title: 'Barrier',
@@ -48,6 +48,24 @@ const OBSTACLES: Record<Obstacle, { title: string; emoji: string; text: string; 
     emoji: '🧊',
     text: 'A frozen truck takes no cubes and cannot be tapped. Fill up the truck next to it to break the ice.',
     has: (l) => l.trucks.some((t) => t.ice !== undefined),
+  },
+  lock: {
+    title: 'Lock & Key',
+    emoji: '🔑',
+    text: 'Trucks behind a shutter are locked. Empty the truck carrying the key of the same colour to open it.',
+    has: (l) => l.trucks.some((t) => t.shutter !== undefined),
+  },
+  tag: {
+    title: 'Coloured Truck',
+    emoji: '🎨',
+    text: 'A coloured truck only takes cubes of its own colour.',
+    has: (l) => l.trucks.some((t) => t.tag !== undefined),
+  },
+  rope: {
+    title: 'Rope',
+    emoji: '🪢',
+    text: 'Tied trucks cannot send cubes out. Sort any one of them and the whole rope comes off.',
+    has: (l) => l.trucks.some((t) => t.rope !== undefined),
   },
 }
 const INTRO_LEVEL = Object.fromEntries(
@@ -318,6 +336,10 @@ export default function LoopSort() {
           ? `Curtain closed - sort ${BLOCK_NAMES[a.state.trucks[i].lock ?? 0]} first.`
           : r === 'frozen'
             ? 'Frozen! Fill the truck next to it to break the ice.'
+            : r === 'shut'
+              ? 'Locked - empty the truck with the key to open the shutter.'
+              : r === 'tied'
+                ? 'Tied by a rope - sort one of the tied trucks to untie it.'
             : r === 'barrier'
               ? 'A barrier blocks this truck - cubes can go in, but not out.'
               : r === 'empty'

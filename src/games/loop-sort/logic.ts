@@ -33,6 +33,14 @@ export interface TruckDef {
   barrier?: boolean
   /** ice: frozen (no tap, takes no cubes) until the neighbouring truck with this index is filled */
   ice?: number
+  /** lock & key: carries the key with this id; the key is collected when the truck is emptied */
+  key?: number
+  /** lock & key: behind a shutter that opens with the key of this id */
+  shutter?: number
+  /** coloured truck: only accepts cubes of this colour */
+  tag?: number
+  /** rope: tied with every truck of the same rope id; none can be tapped until one of them is sorted */
+  rope?: number
 }
 
 export interface LevelDef {
@@ -62,6 +70,10 @@ export interface Truck {
   ice?: number
   /** the ice has broken (plays the shatter once) */
   thawed?: boolean
+  key?: number
+  shutter?: number
+  tag?: number
+  rope?: number
 }
 
 export interface LoopState {
@@ -73,6 +85,10 @@ export interface LoopState {
   belt: (number | null)[] // one slot per conveyor position
   capacity: number
   completed: number[] // colours completed
+  /** keys collected so far (lock & key) */
+  keys?: number[]
+  /** ropes that have come off */
+  cut?: number[]
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +357,10 @@ export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity' | 'styl
     pos: layout.truckPos[i],
     ...(t.barrier ? { barrier: true } : {}),
     ...(t.ice !== undefined ? { ice: t.ice } : {}),
+    ...(t.key !== undefined ? { key: t.key } : {}),
+    ...(t.shutter !== undefined ? { shutter: t.shutter } : {}),
+    ...(t.tag !== undefined ? { tag: t.tag } : {}),
+    ...(t.rope !== undefined ? { rope: t.rope } : {}),
   }))
   for (let i = level.trucks.length; i < total; i += 1) trucks.push({ blocks: [], done: false, pos: layout.truckPos[i], inactive: true })
   const belt = Array(layout.length).fill(null)
@@ -355,6 +375,12 @@ export const conveyorLoad = (s: LoopState) => beltCount(s) + outgoingCount(s)
 export const freeSpace = (s: LoopState) => s.capacity - conveyorLoad(s)
 export const isLocked = (s: LoopState, t: Truck) => t.lock !== undefined && !s.completed.includes(t.lock)
 export const isFrozen = (t: Truck) => t.ice !== undefined
+/** behind a shutter whose key has not been collected yet */
+export const isShut = (s: LoopState, t: Truck) => t.shutter !== undefined && !(s.keys ?? []).includes(t.shutter)
+/** tied by a rope that is still on */
+export const isTied = (s: LoopState, t: Truck) => t.rope !== undefined && !(s.cut ?? []).includes(t.rope)
+/** covered so it takes no part in play (curtain, ice or shutter) */
+const isCovered = (s: LoopState, t: Truck) => isLocked(s, t) || isFrozen(t) || isShut(s, t)
 
 /** Top group of identical colours (what a tap would unload). */
 export function topRun(t: Truck): number[] {
@@ -365,7 +391,7 @@ export function topRun(t: Truck): number[] {
   return t.blocks.slice(k)
 }
 
-export type TapError = 'empty' | 'locked' | 'frozen' | 'barrier' | 'done' | 'belt-full' | 'invalid'
+export type TapError = 'empty' | 'locked' | 'frozen' | 'shut' | 'barrier' | 'tied' | 'done' | 'belt-full' | 'invalid'
 
 /** Why a truck cannot be tapped right now (null = it can). `belt-full` = not enough space. */
 export function canTap(s: LoopState, i: number): TapError | null {
@@ -374,8 +400,10 @@ export function canTap(s: LoopState, i: number): TapError | null {
   if (t.done) return 'done'
   if (isLocked(s, t)) return 'locked'
   if (isFrozen(t)) return 'frozen'
+  if (isShut(s, t)) return 'shut'
   if (!t.blocks.length) return 'empty'
   if (t.barrier) return 'barrier'
+  if (isTied(s, t)) return 'tied'
   if (topRun(t).length > freeSpace(s)) return 'belt-full'
   return null
 }
@@ -386,10 +414,16 @@ export function tap(s: LoopState, i: number): { state: LoopState; error: TapErro
   if (err) return { state: s, error: err }
   const t = s.trucks[i]
   const run = topRun(t)
-  const trucks = s.trucks.map((x, k) =>
-    k === i ? { ...x, blocks: x.blocks.slice(0, x.blocks.length - run.length), outgoing: [...(x.outgoing ?? []), ...run.slice().reverse()] } : x,
-  )
-  return { state: { ...s, trucks }, error: null }
+  const left = t.blocks.slice(0, t.blocks.length - run.length)
+  // emptying the truck that carries a key collects it, which opens the matching shutter
+  const found = !left.length && t.key !== undefined ? t.key : undefined
+  const trucks = s.trucks.map((x, k) => {
+    if (k !== i) return x
+    const next = { ...x, blocks: left, outgoing: [...(x.outgoing ?? []), ...run.slice().reverse()] }
+    if (found !== undefined) delete next.key
+    return next
+  })
+  return { state: { ...s, trucks, ...(found !== undefined ? { keys: [...(s.keys ?? []), found] } : {}) }, error: null }
 }
 
 export type TapOutcome =
@@ -412,7 +446,8 @@ export function attemptTap(s: LoopState, i: number, trigger: 'tap-exceeds-capaci
 }
 
 export function accepts(s: LoopState, t: Truck, color: number): boolean {
-  if (t.inactive || t.done || isLocked(s, t) || isFrozen(t) || t.outgoing?.length || t.blocks.length >= TRUCK_CAPACITY) return false
+  if (t.inactive || t.done || isCovered(s, t) || t.outgoing?.length || t.blocks.length >= TRUCK_CAPACITY) return false
+  if (t.tag !== undefined && t.tag !== color) return false
   return !t.blocks.length || t.blocks[t.blocks.length - 1] === color
 }
 
@@ -432,10 +467,11 @@ export function tick(s: LoopState): TickResult {
   const completedNow: number[] = []
   let trucks = s.trucks
   let completed = s.completed
+  let cut = s.cut
   trucks.forEach((t, i) => {
     const c = belt[t.pos]
     if (c === null) return
-    const state = { ...s, trucks, completed }
+    const state = { ...s, trucks, completed, cut }
     if (!accepts(state, trucks[i], c)) return
     belt[t.pos] = null
     const blocks = [...trucks[i].blocks, c]
@@ -444,6 +480,8 @@ export function tick(s: LoopState): TickResult {
     if (full) {
       completed = [...completed, c]
       completedNow.push(i)
+      const rope = trucks[i].rope
+      if (rope !== undefined && !(cut ?? []).includes(rope)) cut = [...(cut ?? []), rope]
     }
     absorbed.push({ truck: i, color: c })
   })
@@ -467,7 +505,7 @@ export function tick(s: LoopState): TickResult {
     emitted.push({ truck: i, pos: t.pos, color: c })
     return { ...t, outgoing: rest.length ? rest : undefined }
   })
-  return { state: { ...s, trucks, belt, completed }, absorbed, completed: completedNow, emitted }
+  return { state: { ...s, trucks, belt, completed, ...(cut ? { cut } : {}) }, absorbed, completed: completedNow, emitted }
 }
 
 /** Runs the conveyor until nothing more can be absorbed (a full lap with no pick-ups) or it is empty. */
@@ -487,7 +525,7 @@ export const isWon = (s: LoopState) => conveyorLoad(s) === 0 && s.trucks.every((
 /** True when blocks remain but no truck could ever be tapped (even with unlimited space). */
 export function hasNoMoves(s: LoopState): boolean {
   if (isWon(s) || outgoingCount(s) > 0) return false
-  return s.trucks.every((t) => t.inactive || t.done || isLocked(s, t) || isFrozen(t) || t.barrier || t.blocks.length === 0)
+  return s.trucks.every((t) => t.inactive || t.done || isCovered(s, t) || t.barrier || isTied(s, t) || t.blocks.length === 0)
 }
 
 /** Legacy 'jammed' rule: settled and no tap fits. */
@@ -520,7 +558,7 @@ export function addTruck(s: LoopState): LoopState {
 /** Trucks whose cube order can be shuffled (2+ cubes, not all one colour, open). */
 export function canShuffle(s: LoopState, i: number): boolean {
   const t = s.trucks[i]
-  if (!t || t.inactive || t.done || isLocked(s, t) || isFrozen(t) || t.blocks.length < 2) return false
+  if (!t || t.inactive || t.done || isCovered(s, t) || t.blocks.length < 2) return false
   return new Set(t.blocks).size > 1
 }
 
@@ -553,7 +591,7 @@ export function undoTo(previous: LoopState, current: LoopState): LoopState {
 // Solvers
 // ---------------------------------------------------------------------------
 export function stateKey(s: LoopState): string {
-  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : (isFrozen(t) ? '*' : '') + t.blocks.join('') + (t.outgoing?.length ? `>${t.outgoing.join('')}` : ''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}`
+  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : (isFrozen(t) ? '*' : '') + t.blocks.join('') + (t.outgoing?.length ? `>${t.outgoing.join('')}` : ''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}#${(s.keys ?? []).join('')}#${(s.cut ?? []).join('')}`
 }
 
 /**
@@ -737,10 +775,13 @@ export function levelParams(n: number) {
   // obstacles, on a compressed version of the reference's pacing (re-paced with the long campaign)
   const barrier = n >= 20 && (n % 3 === 1 || (n >= 45 && n % 4 === 0))
   const ice = n >= 29 && (n % 3 === 2 || (n >= 45 && n % 4 === 2))
+  const lock = n >= 33 && n % 4 === 1
+  const tag = n >= 39 && n % 4 === 3
+  const rope = n >= 43 && n % 5 === 3
   // layouts in the reference's order: rows first, stacked sideways trucks from level 3, the C-shaped
   // tunnel track from level 7, then a mix
   const style: LayoutStyle = n <= 2 ? 'rows' : n <= 6 ? 'stack' : (['tunnel', 'rows', 'stack'] as const)[(n - 7) % 3]
-  return { colors, empties, capacity, hidden, curtain, barrier, ice, style }
+  return { colors, empties, capacity, hidden, curtain, barrier, ice, lock, tag, rope, style }
 }
 
 /** Level 1 is a one-tap tutorial: one colour split over two trucks. */
@@ -786,6 +827,46 @@ function placeObstacles(trucks: TruckDef[], p: ReturnType<typeof levelParams>, r
     if (!options.length) return null
     const [i, k] = pick(options)
     out[i].ice = k
+  }
+  const layout = () => boardLayout(Math.min(MAX_TRUCKS, out.length + SPARE_DOCKS), p.style, Math.min(SPARE_DOCKS, MAX_TRUCKS - out.length))
+  const plain = (t: TruckDef) => !t.barrier && t.ice === undefined && t.lock === undefined && t.shutter === undefined && t.rope === undefined && t.tag === undefined
+  /** runs of `len` trucks standing side by side in one row */
+  const runs = (len: number, ok: (i: number) => boolean) => {
+    const b = layout()
+    const found: number[][] = []
+    out.forEach((_, i) => {
+      const run = [i]
+      while (run.length < len) {
+        const nextK = neighbours(b, run[run.length - 1]).find((k) => k < out.length && !run.includes(k) && (run.length < 2 || neighbours(b, run[run.length - 2]).indexOf(k) < 0))
+        if (nextK === undefined || !ok(nextK)) break
+        run.push(nextK)
+      }
+      if (run.length === len && run.every(ok)) found.push(run)
+    })
+    return found
+  }
+  if (p.tag) {
+    // a coloured truck: an empty truck that only takes one colour
+    const free = out.map((t, i) => (!t.blocks.length && plain(t) ? i : -1)).filter((i) => i >= 0)
+    if (!free.length) return null
+    const colours = [...new Set(out.flatMap((t) => t.blocks))]
+    out[pick(free)].tag = pick(colours)
+  }
+  if (p.lock) {
+    // 2-3 trucks side by side behind a shutter; its key rides on another truck that has to be emptied
+    const options = runs(rand() < 0.5 ? 2 : 3, (i) => plain(out[i]))
+    if (!options.length) return null
+    const shut = pick(options)
+    const carriers = out.map((t, i) => (t.blocks.length && plain(t) && !shut.includes(i) ? i : -1)).filter((i) => i >= 0)
+    if (!carriers.length) return null
+    for (const i of shut) out[i].shutter = 0
+    out[pick(carriers)].key = 0
+  }
+  if (p.rope) {
+    // 2-4 trucks tied together; at least one of them can still be sorted without leaving
+    const options = runs(2 + Math.floor(rand() * 3), (i) => plain(out[i]) && out[i].key === undefined).filter((run) => run.some((i) => new Set(out[i].blocks).size <= 1))
+    if (!options.length) return null
+    for (const i of pick(options)) out[i].rope = 0
   }
   return out
 }

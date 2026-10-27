@@ -169,3 +169,20 @@ html[data-reduced-motion='on'] *::after {
 
 .scrollbar-none { scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Chakkar Cubes: a shutter rolls up when its key is found, a rope drops away when it comes off */
+@keyframes cc-roll {
+  to { transform: scaleY(0.04); opacity: 0; }
+}
+.cc-roll {
+  animation: cc-roll 0.6s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+@keyframes cc-drop {
+  to { transform: translateY(18px); opacity: 0; }
+}
+.cc-drop {
+  animation: cc-drop 0.5s ease-in forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-roll, .cc-drop { animation-duration: 1ms; }
+}
