@@ -117,7 +117,7 @@ export interface LoopState {
 // every truck sits exactly on one position, so a passing cube is always offered to it.
 // ---------------------------------------------------------------------------
 export type Facing = 'up' | 'down' | 'left' | 'right'
-export type RowId = 'inner-top' | 'inner-bottom' | 'outer-top' | 'outer-bottom' | 'inner-stack'
+export type RowId = 'inner-top' | 'inner-bottom' | 'outer-top' | 'outer-bottom' | 'inner-stack' | 'inner-left' | 'inner-right' | 'outer-right'
 /**
  * Board layouts seen in the reference:
  *  - rows:   upright trucks in rows inside and around a rounded square loop (its first levels)
@@ -125,7 +125,7 @@ export type RowId = 'inner-top' | 'inner-bottom' | 'outer-top' | 'outer-bottom' 
  *            trucks above and below the loop facing it
  *  - tunnel: like stack, but the left side of the loop runs through a hidden tunnel (a C-shaped track)
  */
-export type LayoutStyle = 'rows' | 'stack' | 'tunnel'
+export type LayoutStyle = 'rows' | 'stack' | 'tunnel' | 'u' | 'tall'
 
 export interface TruckSpot {
   x: number
@@ -147,7 +147,16 @@ export interface BoardLayout {
   points: [number, number][]
   trucks: TruckSpot[]
   /** Area hidden by the tunnel (cubes inside it are not drawn), if this layout has one. */
-  tunnel?: { x: number; y: number; w: number; h: number }
+  tunnel?: TunnelRect
+}
+
+/** Part of the loop hidden in a tunnel: the left side (C track) or the top (U track). */
+export interface TunnelRect {
+  x: number
+  y: number
+  w: number
+  h: number
+  side?: 'left' | 'top'
 }
 
 export interface BeltLayout {
@@ -201,7 +210,8 @@ export function boardLayout(truckCount: number, style: LayoutStyle = 'rows', spa
   const id = `${style}:${k}:${sp}`
   const cached = layoutCache.get(id)
   if (cached) return cached
-  const result = style === 'rows' ? rowsLayout(k, sp) : stackLayout(k, style === 'tunnel')
+  const result =
+    style === 'rows' ? rowsLayout(k, sp) : style === 'u' ? uLayout(k) : style === 'tall' ? tallLayout(k) : stackLayout(k, style === 'tunnel')
   layoutCache.set(id, result)
   return result
 }
@@ -255,7 +265,7 @@ function stackLayout(k: number, tunnel: boolean): BoardLayout {
   const loop = { x: LOOP_X, y: loopY, w: LOOP_W, h: loopH, r: LOOP_R }
   const { points, step } = loopPoints(loop)
   // the tunnel swallows the whole left side (corners included): the top and bottom straights end in caps
-  const tunnelRect = tunnel ? { x: 0, y: loopY - RIM_HALF - 4, w: LOOP_X + LOOP_R, h: loopH + 2 * RIM_HALF + 8 } : undefined
+  const tunnelRect: TunnelRect | undefined = tunnel ? { x: 0, y: loopY - RIM_HALF - 4, w: LOOP_X + LOOP_R, h: loopH + 2 * RIM_HALF + 8, side: 'left' } : undefined
   const inTunnel = (i: number) =>
     // (half a step of margin keeps loading points clear of the end caps)
     !!tunnelRect && points[i][0] < tunnelRect.x + tunnelRect.w + STEP / 2 && points[i][1] > tunnelRect.y && points[i][1] < tunnelRect.y + tunnelRect.h
@@ -278,6 +288,93 @@ function stackLayout(k: number, tunnel: boolean): BoardLayout {
   for (const x of rowXs(above)) trucks.push({ x, y: loopY - RIM_HALF - 8 - oh, w: ow, h: oh, facing: 'down', row: 'outer-top', pos: pick(x + ow / 2, loopY) })
   for (const x of rowXs(below)) trucks.push({ x, y: loopY + loopH + RIM_HALF + 8, w: ow, h: oh, facing: 'up', row: 'outer-bottom', pos: pick(x + ow / 2, loopY + loopH) })
   return { width: BOARD_WIDTH, height, loop, step, points, trucks, tunnel: tunnelRect }
+}
+
+/**
+ * U track (the reference's level 250): the top of the loop runs through a hidden tunnel. A row of
+ * upright trucks below the loop faces up, and two columns of sideways trucks inside face the side
+ * belts.
+ */
+function uLayout(k: number): BoardLayout {
+  const below = Math.min(4, k)
+  const sides = k - below
+  const left = Math.min(4, Math.ceil(sides / 2))
+  const right = Math.min(4, sides - left)
+  const innerW = LOOP_W - 2 * RIM_HALF - 2 * 12
+  const tw = Math.min(70, Math.floor((LOOP_W - 3 * GAP) / 4))
+  const th = Math.round(tw * 2.05)
+  const sw = Math.floor((innerW - GAP) / 2)
+  const sh = Math.round(sw / 2.05)
+  const loopY = 40
+  const rows = Math.max(1, left, right)
+  const colH = rows * sh + (rows - 1) * GAP
+  // room under the tunnel for the corners, then the columns, then the bottom straight
+  const loopH = Math.max(300, LOOP_R + 30 + colH + RIM_HALF + PAD + 20)
+  const height = loopY + loopH + 40 + th + 22
+  const loop = { x: LOOP_X, y: loopY, w: LOOP_W, h: loopH, r: LOOP_R }
+  const { points, step } = loopPoints(loop)
+  // the tunnel swallows the whole top straight and both top corners; the side belts end in caps
+  const tunnel: TunnelRect = { x: 0, y: 0, w: BOARD_WIDTH, h: loopY + LOOP_R, side: 'top' }
+  const inTunnel = (i: number) => points[i][1] < tunnel.y + tunnel.h + STEP / 2
+  const pick = positionPicker(points, (i) => !inTunnel(i))
+  const trucks: TruckSpot[] = []
+  const rowXs = (count: number) => {
+    const total = count * tw + (count - 1) * GAP
+    const start = LOOP_X + LOOP_W / 2 - total / 2
+    return Array.from({ length: count }, (_, j) => start + j * (tw + GAP))
+  }
+  for (const x of rowXs(below)) {
+    trucks.push({ x, y: loopY + loopH + RIM_HALF + 8, w: tw, h: th, facing: 'up', row: 'outer-bottom', pos: pick(x + tw / 2, loopY + loopH) })
+  }
+  const colY = loopY + LOOP_R + 30
+  for (let j = 0; j < Math.max(left, right); j += 1) {
+    const y = colY + j * (sh + GAP)
+    if (j < left) trucks.push({ x: LOOP_X + RIM_HALF + 10, y, w: sw, h: sh, facing: 'left', row: 'inner-left', pos: pick(LOOP_X, y + sh / 2) })
+    if (j < right) trucks.push({ x: LOOP_X + LOOP_W - RIM_HALF - 10 - sw, y, w: sw, h: sh, facing: 'right', row: 'inner-right', pos: pick(LOOP_X + LOOP_W, y + sh / 2) })
+  }
+  return { width: BOARD_WIDTH, height, loop, step, points, trucks, tunnel }
+}
+
+/**
+ * Tall track (the reference's levels 699 / 707): a narrow, tall loop on the left with upright
+ * trucks inside at the top and bottom, and a long column of sideways trucks outside on the right,
+ * facing the belt.
+ */
+function tallLayout(k: number): BoardLayout {
+  const column = Math.min(8, k)
+  const inner = k - column
+  const top = Math.min(2, Math.ceil(inner / 2))
+  const bottom = Math.min(2, inner - top)
+  const loopW = 196
+  const innerW = loopW - 2 * RIM_HALF - 2 * 12
+  const tw = Math.floor((innerW - GAP) / 2)
+  const th = Math.round(tw * 2.05)
+  const cx = LOOP_X + loopW + RIM_HALF + 10
+  const sw = BOARD_WIDTH - cx - 6
+  const sh = Math.round(sw / 2.05)
+  const loopY = 30
+  const colH = column * sh + (column - 1) * GAP
+  const loopH = Math.max(colH + 2 * PAD, (top ? th : 0) + (bottom ? th : 0) + 2 * (RIM_HALF + PAD) + 60, 320)
+  const height = loopY + loopH + 40
+  const loop = { x: LOOP_X, y: loopY, w: loopW, h: loopH, r: LOOP_R }
+  const { points, step } = loopPoints(loop)
+  const pick = positionPicker(points)
+  const trucks: TruckSpot[] = []
+  const colY = loopY + loopH / 2 - colH / 2
+  for (let j = 0; j < column; j += 1) {
+    const y = colY + j * (sh + GAP)
+    trucks.push({ x: cx, y, w: sw, h: sh, facing: 'left', row: 'outer-right', pos: pick(LOOP_X + loopW, y + sh / 2) })
+  }
+  const rowXs = (count: number) => {
+    const total = count * tw + (count - 1) * GAP
+    const start = LOOP_X + loopW / 2 - total / 2
+    return Array.from({ length: count }, (_, j) => start + j * (tw + GAP))
+  }
+  for (const x of rowXs(top)) trucks.push({ x, y: loopY + RIM_HALF + PAD, w: tw, h: th, facing: 'up', row: 'inner-top', pos: pick(x + tw / 2, loopY) })
+  for (const x of rowXs(bottom)) {
+    trucks.push({ x, y: loopY + loopH - RIM_HALF - PAD - th, w: tw, h: th, facing: 'down', row: 'inner-bottom', pos: pick(x + tw / 2, loopY + loopH) })
+  }
+  return { width: BOARD_WIDTH, height, loop, step, points, trucks }
 }
 
 function rowsLayout(total: number, spares: number): BoardLayout {
@@ -870,8 +967,9 @@ export function levelParams(n: number) {
     for (let k = 0; k < extra && pool.length; k += 1) on.add(pool.splice(Math.floor(r() * pool.length), 1)[0])
   }
   // layouts in the reference's order: rows first, stacked sideways trucks from level 3, the C-shaped
-  // tunnel track from level 7, then a mix
-  const style: LayoutStyle = n <= 2 ? 'rows' : n <= 6 ? 'stack' : (['tunnel', 'rows', 'stack'] as const)[(n - 7) % 3]
+  // tunnel track from level 7, the U track from 101 and the tall track from 600, then a mix
+  const mix: LayoutStyle[] = n >= 600 ? ['tunnel', 'rows', 'stack', 'u', 'tall'] : n >= 101 ? ['tunnel', 'rows', 'stack', 'u'] : ['tunnel', 'rows', 'stack']
+  const style: LayoutStyle = n <= 2 ? 'rows' : n <= 6 ? 'stack' : n === 101 ? 'u' : n === 600 ? 'tall' : mix[(n - 7) % mix.length]
   // later levels draw their colours from the whole palette, like the reference's browns, greys, white and black
   const palette = n <= 60 ? 8 : BLOCK_PALETTE_SIZE
   return {
@@ -903,7 +1001,7 @@ function tutorialLevel(): LevelDef {
 /** Trucks standing right next to truck `i` in the same row of the board. */
 export function neighbours(layout: BoardLayout, i: number): number[] {
   const me = layout.trucks[i]
-  const across = me.row === 'inner-stack' ? 'y' : 'x'
+  const across = me.row === 'inner-stack' || me.row === 'inner-left' || me.row === 'inner-right' || me.row === 'outer-right' ? 'y' : 'x'
   const row = layout.trucks.map((t, k) => ({ t, k })).filter(({ t }) => t.row === me.row).sort((a, b) => a.t[across] - b.t[across])
   const at = row.findIndex(({ k }) => k === i)
   return [row[at - 1]?.k, row[at + 1]?.k].filter((k): k is number => k !== undefined)

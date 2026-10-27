@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import type { TunnelRect } from '../logic'
 import { CC } from './defs'
 
 interface TrackProps {
@@ -13,7 +14,7 @@ interface TrackProps {
   /** Points along the belt, in travel order, used to place direction arrows. */
   points: [number, number][]
   /** Part of the loop that runs through a hidden tunnel (not drawn); its ends get caps. */
-  tunnel?: { x: number; y: number; w: number; h: number }
+  tunnel?: TunnelRect
   /** conveyor at capacity: the rim glows red, like the reference */
   full?: boolean
 }
@@ -87,7 +88,14 @@ export const Track = memo(function Track({ x, y, w, h, radius, width = 34, point
       ))}
       </g>
       {/* end caps where the track enters and leaves the tunnel */}
-      {tunnel &&
+      {tunnel?.side === 'top' &&
+        [x, x + w].map((cx) => (
+          <g key={cx}>
+            <rect x={cx - half + 6} y={tunnel.y + tunnel.h - 10} width={rim} height={16} rx={7} fill={CC.rimDark} />
+            <rect x={cx - half} y={tunnel.y + tunnel.h - 10} width={rim} height={16} rx={7} fill="url(#cc-rim)" stroke="rgba(184,180,216,0.9)" strokeWidth={2} />
+          </g>
+        ))}
+      {tunnel && tunnel.side !== 'top' &&
         [y, y + h].map((cy) => (
           <g key={cy}>
             <rect x={tunnel.x + tunnel.w - 10} y={cy - half + 6} width={16} height={rim} rx={7} fill={CC.rimDark} />

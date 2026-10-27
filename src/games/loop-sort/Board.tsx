@@ -6,7 +6,7 @@ import { ArtDefs } from './art/defs'
 import { Track } from './art/Track'
 import { KEY_COLORS, TruckGradients, TruckSprite } from './art/TruckSprite'
 import { shade } from './art/Block3D'
-import { boardLayout, isCarpeted, isFrozen, isLocked, isShut, isTied, type LoopState, type Truck, type TruckSpot } from './logic'
+import { boardLayout, type TunnelRect, isCarpeted, isFrozen, isLocked, isShut, isTied, type LoopState, type Truck, type TruckSpot } from './logic'
 
 export { BLOCK_COLORS, BLOCK_NAMES } from './art/Block3D'
 
@@ -271,7 +271,7 @@ const BoardBase = memo(function BoardBase({
 }: {
   loop: { x: number; y: number; w: number; h: number; r: number }
   points: [number, number][]
-  tunnel?: { x: number; y: number; w: number; h: number }
+  tunnel?: TunnelRect
   full?: boolean
 }) {
   return (

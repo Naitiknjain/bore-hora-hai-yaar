@@ -135,7 +135,7 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
       <rect x={bodyX + wall * 0.5} y={hoodY + (up ? wall * 0.4 : 0)} width={bodyW - wall} height={hoodH - wall * 0.4} rx={r * 0.7} fill={paint ? shade(paint, 0.28) : 'url(#cc-truck-cab)'} />
       <rect x={bodyX + wall} y={up ? y + hoodH : y + topH - hoodH - 1.2} width={bodyW - 2 * wall} height={1.2} fill="rgba(40,20,120,0.45)" />
       {/* recessed cargo bed */}
-      <rect x={bedX} y={bedY0} width={bedW} height={bedY1 - bedY0} rx={bedR} fill={paint ? shade(paint, -0.28) : 'url(#cc-truck-bed)'} />
+      <rect x={bedX} y={bedY0} width={bedW} height={bedY1 - bedY0} rx={bedR} fill={paint ? shade(paint, -0.45) : 'url(#cc-truck-bed)'} />
       <rect x={bedX} y={bedY0} width={bedW} height={Math.max(2, slotH * 0.1)} rx={2} fill="rgba(20,8,70,0.3)" />
       {/* cargo */}
       {!done &&
@@ -167,25 +167,44 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
         ))}
       {!done &&
         screws?.map((k) => (
-          <Screw key={k} cx={bedX + bedW / 2} cy={up ? bedY1 - k * slotH : bedY0 + k * slotH} r={Math.max(5.5, Math.min(bedW, slotH) * 0.27)} />
+          <Screw key={k} cx={bedX + bedW / 2} cy={up ? bedY1 - k * slotH : bedY0 + k * slotH} r={Math.max(7, Math.min(bedW * 0.36, slotH * 0.42))} />
         ))}
-      {queue?.map((g, k) => {
-        // waiting groups, nearest first, kept upright even on sideways trucks
-        const n = queue.length
-        const size = Math.min(Math.max(hoodH * 1.25, 13), (bodyW - wall) / Math.max(2, n) - 3)
-        const cx = bodyX + bodyW / 2 + (k - (n - 1) / 2) * (size + 4)
-        const cy = hoodY + hoodH / 2
-        return (
-          <g key={k} transform={turn ? `rotate(${-turn} ${cx} ${cy})` : undefined} aria-hidden>
-            <rect x={cx - size / 2} y={cy - size / 2 + 1.5} width={size} height={size} rx={size * 0.22} fill="rgba(6,4,24,0.45)" />
-            <rect x={cx - size / 2} y={cy - size / 2} width={size} height={size} rx={size * 0.22} fill={BLOCK_COLORS[g[g.length - 1]]} stroke="#ffffff" strokeWidth={1.2} />
-            <text x={cx} y={cy + size * 0.2} textAnchor="middle" fontSize={size * 0.6} fontWeight={900} fill="#ffffff" stroke="rgba(20,10,60,0.6)" strokeWidth={1.6} paintOrder="stroke" fontFamily="'Baloo 2', system-ui">
-              {g.length}
-            </text>
-          </g>
-        )
-      })}
-      {keyId !== undefined && <KeyIcon cx={bodyX + bodyW / 2} cy={hoodY + hoodH / 2} s={Math.min(bodyW * 0.62, hoodH * 1.5)} color={KEY_COLORS[keyId % KEY_COLORS.length]} />}
+      {queue?.length ? (
+        // waiting groups as a little stack of cube cards: the next one in front (cube count on it),
+        // one card behind it per extra group; kept upright even on sideways trucks
+        <g transform={turn ? `rotate(${-turn} ${bodyX + bodyW / 2} ${hoodY + hoodH / 2})` : undefined} aria-hidden>
+          {(() => {
+            const size = Math.max(16, Math.min(bodyW * 0.62, 24))
+            const cx = bodyX + bodyW / 2
+            const cy = hoodY + hoodH / 2
+            const next = queue[0]
+            return (
+              <>
+                {queue.slice(1).map((g, k) => (
+                  <rect
+                    key={k}
+                    x={cx - size / 2 + (k + 1) * 3.5}
+                    y={cy - size / 2 - (k + 1) * 3.5}
+                    width={size}
+                    height={size}
+                    rx={size * 0.22}
+                    fill={shade(BLOCK_COLORS[g[g.length - 1]], -0.1)}
+                    stroke="#ffffff"
+                    strokeWidth={1.2}
+                  />
+                ))}
+                <rect x={cx - size / 2} y={cy - size / 2 + 2} width={size} height={size} rx={size * 0.22} fill="rgba(6,4,24,0.5)" />
+                <rect x={cx - size / 2} y={cy - size / 2} width={size} height={size} rx={size * 0.22} fill={BLOCK_COLORS[next[next.length - 1]]} stroke="#ffffff" strokeWidth={1.6} />
+                <text x={cx} y={cy + size * 0.22} textAnchor="middle" fontSize={size * 0.64} fontWeight={900} fill="#ffffff" stroke="rgba(20,10,60,0.65)" strokeWidth={2} paintOrder="stroke" fontFamily="'Baloo 2', system-ui">
+                  {next.length}
+                </text>
+              </>
+            )
+          })()}
+        </g>
+      ) : null}
+      {paint && !locked && <PaintDrop cx={bodyX + bodyW / 2} cy={hoodY + hoodH / 2} s={Math.max(12, Math.min(bodyW * 0.42, hoodH * 1.6))} turn={turn} />}
+      {keyId !== undefined && <KeyIcon cx={bodyX + bodyW / 2} cy={hoodY + hoodH / 2} s={Math.max(18, Math.min(bodyW * 0.8, hoodH * 2.2))} color={KEY_COLORS[keyId % KEY_COLORS.length]} />}
       {frozen && <Ice x={bodyX} y={y} w={bodyW} h={topH + depth} r={r} />}
       {thawed && <IceShards cx={bodyX + bodyW / 2} cy={y + topH / 2} spread={Math.max(bodyW, topH * 0.5)} />}
       {locked && <Curtain x={bodyX} y={y} w={bodyW} h={topH} r={r} color={BLOCK_COLORS[lockColor ?? 0]} />}
@@ -209,6 +228,21 @@ function Bollard({ cx, cy, r, down }: { cx: number; cy: number; r: number; down:
           <circle cx={cx - r * 0.12} cy={cy - 2.3} r={r * 0.12} fill="#fff6c8" />
         </>
       )}
+    </g>
+  )
+}
+
+/** White paint drop on a coloured truck's hood: "this truck only takes its own colour". */
+function PaintDrop({ cx, cy, s, turn }: { cx: number; cy: number; s: number; turn?: number }) {
+  return (
+    <g aria-hidden transform={turn ? `rotate(${-turn} ${cx} ${cy})` : undefined}>
+      <path
+        d={`M ${cx} ${cy - s * 0.55} C ${cx + s * 0.1} ${cy - s * 0.3} ${cx + s * 0.42} ${cy - s * 0.02} ${cx + s * 0.42} ${cy + s * 0.18} A ${s * 0.42} ${s * 0.42} 0 1 1 ${cx - s * 0.42} ${cy + s * 0.18} C ${cx - s * 0.42} ${cy - s * 0.02} ${cx - s * 0.1} ${cy - s * 0.3} ${cx} ${cy - s * 0.55} Z`}
+        fill="#ffffff"
+        stroke="rgba(20,10,60,0.45)"
+        strokeWidth={1.2}
+      />
+      <ellipse cx={cx - s * 0.14} cy={cy + s * 0.12} rx={s * 0.08} ry={s * 0.14} fill="rgba(20,10,60,0.18)" />
     </g>
   )
 }

@@ -148,12 +148,19 @@ function Title() {
   )
 }
 
+/** Short coin count for the in-level HUD: 9999, then 10.5K, 125K, 1.2M. */
+export function shortCoins(n: number): string {
+  if (n < 10000) return String(n)
+  const [v, unit] = n < 1e6 ? [n / 1000, 'K'] : [n / 1e6, 'M']
+  return `${v < 100 ? Math.floor(v * 10) / 10 : Math.floor(v)}${unit}`
+}
+
 function CoinsPill({ coins, compact }: { coins: number; compact?: boolean }) {
   if (compact)
     return (
       <HudPill label={`${coins} coins`} testId="coins">
-        <CoinIcon className="size-6" />
-        {coins}
+        <CoinIcon className="size-6 max-[399px]:size-5 max-[359px]:size-4" />
+        {shortCoins(coins)}
       </HudPill>
     )
   return (
@@ -674,22 +681,22 @@ export default function LoopSort() {
   return (
     <div className={`${shell} flex min-h-0 w-full flex-1 flex-col short:p-3`}>
       {/* HUD: level on the left, cube counter in the middle, lives and the gear on the right (like the reference) */}
-      <div className="flex shrink-0 items-center justify-between gap-1.5 min-[380px]:gap-2">
-        <div className="flex min-w-0 items-center gap-1.5 min-[380px]:gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-1.5 max-[359px]:gap-1 min-[380px]:gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 max-[359px]:gap-1 min-[380px]:gap-2">
         <RoundIconButton label="Back to Chakkar Cubes home" onClick={() => (costsLife ? setConfirm('leave') : setScreen('home'))}>
           <ArrowLeft className="size-5" strokeWidth={2.8} />
         </RoundIconButton>
         <HudPill label={`Level ${level.n}`}>
           <span aria-hidden>
-            <span className="max-[359px]:hidden">Level </span>
-            <span className="min-[360px]:hidden">Lv </span>
+            <span className="max-[399px]:hidden">Level </span>
+            <span className="min-[400px]:hidden">Lv </span>
             {level.n}
           </span>
         </HudPill>
         </div>
         <div className="relative">
           <HudPill tone={full ? 'danger' : 'default'} label={`Conveyor ${count} of ${board.capacity} cubes`} testId="conveyor-count">
-            <Box className="size-5 max-[399px]:size-4" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
+            <Box className="size-5 max-[399px]:size-4 max-[359px]:hidden" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
           </HudPill>
           {level.difficulty && (
             // Hard / Super Hard badge, like the reference: skulls above the counter, a label below it
@@ -707,7 +714,7 @@ export default function LoopSort() {
             </>
           )}
         </div>
-        <div className="flex min-w-0 items-center gap-1.5 min-[380px]:gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 max-[359px]:gap-1 min-[380px]:gap-2">
           <CoinsPill coins={wallet.coins} compact />
           <RoundIconButton label="Game menu" onClick={() => setMenuOpen(true)}>
             <Settings className="size-5" strokeWidth={2.6} />

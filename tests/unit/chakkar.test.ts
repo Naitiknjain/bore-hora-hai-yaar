@@ -277,15 +277,33 @@ describe('layouts', () => {
     }
   })
 
-  it('uses all three layouts, and no truck loads inside the tunnel', () => {
-    expect(new Set(LEVELS.map((l) => l.style))).toEqual(new Set(['rows', 'stack', 'tunnel']))
-    for (const l of LEVELS.filter((x) => x.style === 'tunnel')) {
-      const b = boardLayout(l.trucks.length + SPARE_DOCKS, 'tunnel', SPARE_DOCKS)
+  it('uses all five track shapes, and no truck loads inside a tunnel', () => {
+    expect(new Set(LEVELS.map((l) => l.style))).toEqual(new Set(['rows', 'stack', 'tunnel', 'u', 'tall']))
+    expect(LEVELS.find((l) => l.style === 'u')?.n).toBe(101)
+    expect(LEVELS.find((l) => l.style === 'tall')?.n).toBe(600)
+    for (const l of LEVELS.filter((x) => x.style === 'tunnel' || x.style === 'u')) {
+      const board = initialState(l, SPARE_DOCKS)
+      const b = boardLayout(board.trucks.length, l.style, board.spares)
       const t = b.tunnel!
       for (const spot of b.trucks) {
         const [x, y] = b.points[spot.pos]
         // every loading point is clearly outside the tunnel and its end caps
-        expect(x < t.x + t.w + 12 && y >= t.y && y <= t.y + t.h, `level ${l.n}`).toBe(false)
+        const inside = t.side === 'top' ? y < t.y + t.h + 12 : x < t.x + t.w + 12 && y >= t.y && y <= t.y + t.h
+        expect(inside, `level ${l.n}`).toBe(false)
+      }
+    }
+  })
+
+  it('every truck of every level gets its own belt position, in front of its open end', () => {
+    for (const l of LEVELS) {
+      const board = initialState(l, SPARE_DOCKS)
+      const b = boardLayout(board.trucks.length, l.style, board.spares)
+      expect(new Set(b.trucks.map((t) => t.pos)).size, `level ${l.n}`).toBe(b.trucks.length)
+      for (const t of b.trucks) {
+        const [px, py] = b.points[t.pos]
+        const mx = t.facing === 'left' ? t.x : t.facing === 'right' ? t.x + t.w : t.x + t.w / 2
+        const my = t.facing === 'up' ? t.y : t.facing === 'down' ? t.y + t.h : t.y + t.h / 2
+        expect(Math.hypot(px - mx, py - my), `level ${l.n}`).toBeLessThan(75)
       }
     }
   })
