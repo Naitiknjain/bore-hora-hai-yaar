@@ -1,18 +1,17 @@
 import {
   ArrowLeft,
+  Box,
   Boxes,
   Check,
   Heart,
   Infinity as InfinityIcon,
   Lock,
   Play,
-  Plus,
   RotateCcw,
   Settings,
   Shield,
   ShieldOff,
   Shuffle,
-  Truck as TruckIcon,
   Undo2,
   Volume2,
   VolumeX,
@@ -31,7 +30,7 @@ import { BLOCK_NAMES, LoopBoard, type BeltItem } from './Board'
 import { ABILITY_LABELS, CHAKKAR_CONFIG, continuesLeft, usesLeft, type AbilityId } from './config'
 import levelsData from './levels.json'
 import { canShuffle, conveyorLoad, nextSpareDock, tick, type LevelDef, type LoopState } from './logic'
-import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton } from './ui'
+import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton, SlotPlusIcon, TruckPlusIcon } from './ui'
 
 const LEVELS = levelsData as LevelDef[]
 // one belt step; ~170ms gives the reference's calm pace (about 6 s per lap on level 1)
@@ -387,7 +386,7 @@ export default function LoopSort() {
   }
 
   const shell =
-    'mx-auto max-w-2xl overflow-hidden rounded-[2rem] bg-[radial-gradient(ellipse_at_50%_30%,#3d27a0_0%,#26166a_48%,#150b3f_100%)] p-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] max-[379px]:p-3 sm:p-6'
+    'mx-auto max-w-2xl overflow-hidden rounded-[2rem] bg-[radial-gradient(ellipse_at_50%_35%,#2d2865_0%,#25215a_50%,#1b1839_100%)] p-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] max-[379px]:p-3 sm:p-6'
 
   // ---------------- HOME ----------------
   if (screen === 'home') {
@@ -525,10 +524,10 @@ export default function LoopSort() {
   const board = attempt.state
   const count = conveyorLoad(board) // includes cubes still streaming out of a truck (same as the Out of Space check)
   const abilities: { id: AbilityId; icon: ReactNode }[] = [
-    { id: 'undo', icon: <Undo2 className="size-6" strokeWidth={2.6} /> },
-    { id: 'shuffle', icon: <Shuffle className="size-6" strokeWidth={2.6} /> },
-    { id: 'extraTruck', icon: <TruckIcon className="size-6" strokeWidth={2.4} /> },
-    { id: 'extraSlot', icon: <Plus className="size-7" strokeWidth={3} /> },
+    { id: 'undo', icon: <Undo2 className="size-7" strokeWidth={3} /> },
+    { id: 'shuffle', icon: <Shuffle className="size-7" strokeWidth={3} /> },
+    { id: 'extraTruck', icon: <TruckPlusIcon className="size-8" /> },
+    { id: 'extraSlot', icon: <SlotPlusIcon className="size-8" /> },
   ]
   const shuffleTargets = shuffleMode ? board.trucks.map((_, i) => i).filter((i) => canShuffle(board, i)) : []
   const leftCont = continuesLeft(attempt.continuesUsed, admin)
@@ -542,8 +541,9 @@ export default function LoopSort() {
 
   return (
     <div className={`${shell} flex min-h-0 w-full flex-1 flex-col short:p-3`}>
-      {/* HUD */}
-      <div className="flex shrink-0 items-center gap-1.5 min-[380px]:gap-2">
+      {/* HUD: level on the left, cube counter in the middle, lives and the gear on the right (like the reference) */}
+      <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-1.5 min-[380px]:gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 min-[380px]:gap-2">
         <RoundIconButton label="Back to Chakkar Cubes home" onClick={() => (costsLife ? setConfirm('leave') : setScreen('home'))}>
           <ArrowLeft className="size-5" strokeWidth={2.8} />
         </RoundIconButton>
@@ -554,10 +554,11 @@ export default function LoopSort() {
             {level.n}
           </span>
         </HudPill>
+        </div>
         <HudPill tone={full ? 'danger' : 'default'} label={`Conveyor ${count} of ${board.capacity} cubes`} testId="conveyor-count">
-          <Boxes className="size-5 max-[359px]:hidden" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
+          <Box className="size-5 max-[359px]:hidden" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
         </HudPill>
-        <div className="ml-auto flex items-center gap-1.5 min-[380px]:gap-2">
+        <div className="flex min-w-0 items-center justify-end gap-1.5 min-[380px]:gap-2">
           <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} compact />
           <RoundIconButton label="Game menu" onClick={() => setMenuOpen(true)}>
             <Settings className="size-5" strokeWidth={2.6} />
@@ -653,7 +654,7 @@ export default function LoopSort() {
         </div>
 
         {/* abilities */}
-        <div className="mt-3 grid shrink-0 grid-cols-4 gap-2 px-1 lg:mt-0 lg:w-24 lg:grid-cols-1 lg:gap-5 lg:px-0 short:mt-0 short:w-20 short:grid-cols-1 short:gap-1 short:px-0">
+        <div className="mt-3 flex shrink-0 justify-center gap-4 px-1 pb-1 min-[380px]:gap-6 lg:mt-0 lg:w-24 lg:flex-col lg:gap-6 lg:px-0 short:mt-0 short:w-16 short:flex-col short:gap-2 short:px-0">
           {abilities.map(({ id, icon }) => {
             const left = usesLeft(id, attempt.used[id], admin)
             const available = abilityAvailable(attempt, id)

@@ -5,17 +5,17 @@ export function TruckGradients() {
   return (
     <>
       <linearGradient id="cc-truck-body" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stopColor="#9b84f0" />
-        <stop offset="0.55" stopColor="#8166e0" />
-        <stop offset="1" stopColor="#6c50d0" />
+        <stop offset="0" stopColor="#8d78d6" />
+        <stop offset="0.55" stopColor="#775ebe" />
+        <stop offset="1" stopColor="#6650a8" />
       </linearGradient>
       <linearGradient id="cc-truck-cab" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#a893f4" />
-        <stop offset="1" stopColor="#8f78e8" />
+        <stop offset="0" stopColor="#9280da" />
+        <stop offset="1" stopColor="#7f6ac8" />
       </linearGradient>
       <linearGradient id="cc-truck-bed" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#6248c6" />
-        <stop offset="1" stopColor="#7158d6" />
+        <stop offset="0" stopColor="#56429a" />
+        <stop offset="1" stopColor="#6551ad" />
       </linearGradient>
       <linearGradient id="cc-glass" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stopColor="#e6f6ff" />
@@ -58,19 +58,20 @@ export function TruckSprite(props: Props) {
   const cx = x + w / 2
   const cy = y + h / 2
   const wheelW = Math.max(10, w * 0.12)
+  const turn = facing === 'right' ? 90 : -90
   return (
     <g>
       {[0.24, 0.72].map((f) => (
         <rect key={f} x={x + w * f} y={y + h - 6} width={wheelW} height={10} rx={4} fill="#141026" stroke="#2c2645" strokeWidth={1} />
       ))}
-      <g transform={`rotate(${facing === 'right' ? 90 : -90} ${cx} ${cy})`}>
-        <UprightTruck {...props} x={cx - h / 2} y={cy - w / 2} w={h} h={w} facing="up" />
+      <g transform={`rotate(${turn} ${cx} ${cy})`}>
+        <UprightTruck {...props} x={cx - h / 2} y={cy - w / 2} w={h} h={w} facing="up" turn={turn} />
       </g>
     </g>
   )
 }
 
-function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1 }: Props & { facing: 'up' | 'down' }) {
+function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
   const up = facing === 'up'
   const bodyX = x + w * 0.05
   const bodyW = w * 0.9
@@ -103,7 +104,7 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
     <g>
       {/* soft ground shadow, then the body's thickness and its lit top */}
       <rect x={bodyX + 3} y={y + depth + 5} width={bodyW} height={topH} rx={r} fill="rgba(6,2,28,0.4)" />
-      <rect x={bodyX} y={y + depth} width={bodyW} height={topH} rx={r} fill="#4a2fae" />
+      <rect x={bodyX} y={y + depth} width={bodyW} height={topH} rx={r} fill="#46358c" />
       <rect x={bodyX} y={y} width={bodyW} height={topH} rx={r} fill="url(#cc-truck-body)" />
       <rect x={bodyX + 1.5} y={y + 1.5} width={bodyW - 3} height={topH - 3} rx={r - 1.5} fill="none" stroke="rgba(236,228,255,0.5)" strokeWidth={1.5} />
       {/* flat hood at the belt end, with a seam towards the bed */}
@@ -121,7 +122,7 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
           return (
             // a new key restarts the settle animation each time more cubes land in this group
             <g key={landed ? `${g.from}-${blocks.length}` : g.from} className={landed ? 'cc-settle' : undefined}>
-              <Block3D x={bedX + 2} y={y0 + 1.5} w={bedW - 4} h={y1 - y0 - 3} color={g.color} hidden={g.hidden} />
+              <Block3D x={bedX + 2} y={y0 + 1.5} w={bedW - 4} h={y1 - y0 - 3} color={g.color} hidden={g.hidden} turn={turn} />
             </g>
           )
         })}
@@ -130,7 +131,7 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
         <path
           d={`M ${bedX + bedW * 0.3} ${(bedY0 + bedY1) / 2} l ${bedW * 0.16} ${bedW * 0.17} l ${bedW * 0.28} ${-bedW * 0.34}`}
           fill="none"
-          stroke="#4d2fb4"
+          stroke="#43328e"
           strokeWidth={Math.max(3, bedW * 0.09)}
           strokeLinecap="round"
           strokeLinejoin="round"

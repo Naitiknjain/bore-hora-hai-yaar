@@ -3,13 +3,13 @@
  * Rendered once per board; ids are prefixed with `cc-` to avoid clashes.
  */
 export const CC = {
-  rimLight: '#c9b8ff',
-  rim: '#8a6df5',
-  rimDark: '#3c2399',
-  channel: '#4a36b4',
-  channelLight: '#5844c8',
-  floor: '#2a1a6b',
-  shadow: 'rgba(8, 3, 30, 0.55)',
+  rimLight: '#9c86dc',
+  rim: '#7159ad',
+  rimDark: '#3b2c78',
+  channel: '#343166',
+  channelLight: '#3a376e',
+  floor: '#2f2968',
+  shadow: 'rgba(6, 4, 24, 0.5)',
 }
 
 export function ArtDefs() {
@@ -36,13 +36,13 @@ export function ArtDefs() {
       </linearGradient>
       {/* recessed belt channel */}
       <linearGradient id="cc-channel" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#3b2a9c" />
+        <stop offset="0" stopColor="#2c2a5a" />
         <stop offset="1" stopColor={CC.channelLight} />
       </linearGradient>
       {/* floor inside / outside the loop */}
       <radialGradient id="cc-floor" cx="0.5" cy="0.45" r="0.7">
-        <stop offset="0" stopColor="#2c1f78" />
-        <stop offset="1" stopColor="#1c1150" />
+        <stop offset="0" stopColor="#332c6e" />
+        <stop offset="1" stopColor="#29245e" />
       </radialGradient>
       <pattern id="cc-floor-dots" width="16" height="16" patternUnits="userSpaceOnUse">
         <circle cx="2" cy="2" r="1" fill="rgba(255,255,255,0.05)" />

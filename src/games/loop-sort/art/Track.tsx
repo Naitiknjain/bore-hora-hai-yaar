@@ -60,20 +60,20 @@ export const Track = memo(function Track({ x, y, w, h, radius, width = 34, point
       {/* recessed belt channel */}
       <rect {...rr(x, y, w, h, radius)} fill="none" stroke="url(#cc-channel)" strokeWidth={width} />
       {/* inner shadow along the top of the channel */}
-      <rect {...rr(x, y + 2, w, h, radius)} fill="none" stroke="rgba(20,8,70,0.35)" strokeWidth={width - 8} />
+      <rect {...rr(x, y + 2, w, h, radius)} fill="none" stroke="rgba(16,14,50,0.35)" strokeWidth={width - 8} />
       <rect {...rr(x, y, w, h, radius)} fill="none" stroke={CC.channel} strokeWidth={width - 12} />
       {/* bright lips on the outer and inner edges */}
-      <rect {...rr(x - half + 1.5, y - half + 1.5, w + rim - 3, h + rim - 3, radius + half - 1.5)} fill="none" stroke="rgba(214,202,255,0.9)" strokeWidth={2.5} />
-      <rect {...rr(x + half - 1.5, y + half - 1.5, w - rim + 3, h - rim + 3, Math.max(6, radius - half + 1.5))} fill="none" stroke="rgba(214,202,255,0.75)" strokeWidth={2} />
-      <rect {...rr(x - width / 2, y - width / 2, w + width, h + width, radius + width / 2)} fill="none" stroke="rgba(10,4,40,0.6)" strokeWidth={1.5} />
-      <rect {...rr(x + width / 2, y + width / 2, w - width, h - width, Math.max(4, radius - width / 2))} fill="none" stroke="rgba(10,4,40,0.6)" strokeWidth={1.5} />
+      <rect {...rr(x - half + 1.5, y - half + 1.5, w + rim - 3, h + rim - 3, radius + half - 1.5)} fill="none" stroke="rgba(184,180,216,0.9)" strokeWidth={2.5} />
+      <rect {...rr(x + half - 1.5, y + half - 1.5, w - rim + 3, h - rim + 3, Math.max(6, radius - half + 1.5))} fill="none" stroke="rgba(184,180,216,0.85)" strokeWidth={2} />
+      <rect {...rr(x - width / 2, y - width / 2, w + width, h + width, radius + width / 2)} fill="none" stroke="rgba(14,12,48,0.75)" strokeWidth={1.5} />
+      <rect {...rr(x + width / 2, y + width / 2, w - width, h - width, Math.max(4, radius - width / 2))} fill="none" stroke="rgba(14,12,48,0.75)" strokeWidth={1.5} />
       {/* engraved direction arrows */}
       {arrows.map((a, i) => (
         <path
           key={i}
           d="M -3.5 -4.5 L 3.5 0 L -3.5 4.5 Z"
           transform={`translate(${a.mx} ${a.my}) rotate(${a.angle})`}
-          fill="rgba(30,16,100,0.45)"
+          fill="rgba(70,64,130,0.55)"
         />
       ))}
       </g>
@@ -82,7 +82,7 @@ export const Track = memo(function Track({ x, y, w, h, radius, width = 34, point
         [y, y + h].map((cy) => (
           <g key={cy}>
             <rect x={tunnel.x + tunnel.w - 10} y={cy - half + 6} width={16} height={rim} rx={7} fill={CC.rimDark} />
-            <rect x={tunnel.x + tunnel.w - 10} y={cy - half} width={16} height={rim} rx={7} fill="url(#cc-rim)" stroke="rgba(214,202,255,0.9)" strokeWidth={2} />
+            <rect x={tunnel.x + tunnel.w - 10} y={cy - half} width={16} height={rim} rx={7} fill="url(#cc-rim)" stroke="rgba(184,180,216,0.9)" strokeWidth={2} />
           </g>
         ))}
     </g>

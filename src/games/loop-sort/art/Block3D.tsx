@@ -31,10 +31,27 @@ interface BlockProps {
   h: number
   color: number
   hidden?: boolean
+  /** rotation (degrees) of the drawing it sits in; the block turns back so its thickness still faces down */
+  turn?: number
 }
 
 /** One block (or a merged run of same-coloured blocks): lit top face, darker side face, gloss. */
-export function Block3D({ x, y, w, h, color, hidden }: BlockProps) {
+export function Block3D({ turn, ...props }: BlockProps) {
+  if (!turn) return <Block3DFlat {...props} />
+  // inside a quarter-turned truck: draw the block in screen orientation, then turn it to fit the bed
+  const cx = props.x + props.w / 2
+  const cy = props.y + props.h / 2
+  const swap = Math.abs(turn) % 180 === 90
+  const w = swap ? props.h : props.w
+  const h = swap ? props.w : props.h
+  return (
+    <g transform={`rotate(${-turn} ${cx} ${cy})`}>
+      <Block3DFlat {...props} x={cx - w / 2} y={cy - h / 2} w={w} h={h} />
+    </g>
+  )
+}
+
+function Block3DFlat({ x, y, w, h, color, hidden }: Omit<BlockProps, 'turn'>) {
   const side = Math.max(3, Math.round(h * 0.16)) // visible thickness
   const r = Math.min(7, w * 0.18)
   const base = BLOCK_COLORS[color]
