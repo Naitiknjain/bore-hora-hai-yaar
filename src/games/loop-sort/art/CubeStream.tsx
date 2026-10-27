@@ -3,11 +3,11 @@ import type { TruckSpot } from '../logic'
 import { BLOCK_COLORS, shade } from './Block3D'
 
 /**
- * Canvas layer that draws the cubes riding the conveyor as a dense, smoothly moving stream of
- * small cubes (each conveyor cube = a little cluster spread along the belt, so neighbours merge
- * into one continuous "snake"). Purely visual: game state comes from `items`.
- *  - cubes glide between conveyor positions every animation frame (no stepping)
- *  - cubes leaving a truck swell in; cubes picked up by a truck fly into it
+ * Canvas layer for the conveyor, matching the reference's look: every run of same-coloured cubes on
+ * the belt is one solid, shaded bar that bends with the loop. Purely visual: game state comes from `items`.
+ *  - bars glide between conveyor positions every animation frame (no stepping)
+ *  - a group leaving a truck pours out as a trickle of small cubes and the bar grows as they land
+ *  - cubes picked up by a truck peel off the bar as small cubes streaming into the truck
  *  - with reduced motion everything is drawn statically at its current position
  */
 export interface StreamItem {
@@ -45,7 +45,12 @@ interface Ghost {
 }
 
 const CLUSTER = 40
-const GHOST_MS = 260
+const GHOST_MS = 300
+/** small cubes per conveyor cube when it pours out of / into a truck */
+const TRICKLE = 6
+const TRICKLE_GAP_MS = 40
+/** half the width of a bar on the belt, in board units */
+const BAR_HALF = 15
 const COLOR_FACES = BLOCK_COLORS.map((c) => ({ top: c, side: shade(c, -0.38), hi: shade(c, 0.55) }))
 
 function rng(seed: number) {
@@ -85,6 +90,52 @@ function drawCube(ctx: CanvasRenderingContext2D, x: number, y: number, s: number
   ctx.globalAlpha = 1
 }
 
+/** Point just inside a truck's open end (the end facing the belt); `depth` 0 = edge, 1 = far end. */
+function mouthOf(spot: TruckSpot, depth: number): [number, number] {
+  const x = spot.x + spot.w / 2
+  return [x, spot.facing === 'up' ? spot.y + spot.h * depth : spot.y + spot.h * (1 - depth)]
+}
+
+type At = (f: number) => { x: number; y: number; ux: number; uy: number }
+
+/** One solid bar of cubes from belt position `from` to `to`, following the curve, shaded like a raised block. */
+function drawBar(ctx: CanvasRenderingContext2D, at: At, from: number, to: number, color: number) {
+  const f = COLOR_FACES[color] ?? COLOR_FACES[0]
+  const pts: [number, number][] = []
+  for (let u = from; u < to; u += 0.2) {
+    const p = at(u)
+    pts.push([p.x, p.y])
+  }
+  const e = at(to)
+  pts.push([e.x, e.y])
+  if (pts.length < 2) return
+  const path = (dy: number) => {
+    ctx.beginPath()
+    ctx.moveTo(pts[0][0], pts[0][1] + dy)
+    for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i][0], pts[i][1] + dy)
+  }
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'butt'
+  // contact shadow, darker side wall, lit top face, soft highlight along the top
+  ctx.strokeStyle = 'rgba(12,4,48,0.45)'
+  ctx.lineWidth = BAR_HALF * 2
+  path(4)
+  ctx.stroke()
+  ctx.strokeStyle = f.side
+  path(2)
+  ctx.stroke()
+  ctx.strokeStyle = f.top
+  ctx.lineWidth = BAR_HALF * 2 - 4
+  path(-0.5)
+  ctx.stroke()
+  ctx.strokeStyle = f.hi
+  ctx.globalAlpha = 0.35
+  ctx.lineWidth = 3
+  path(-BAR_HALF * 0.45)
+  ctx.stroke()
+  ctx.globalAlpha = 1
+}
+
 export function CubeStream({ svgRef, width, height, points, trucks, items, tickMs, reducedMotion }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const tracked = useRef(new Map<number, Tracked>())
@@ -107,8 +158,6 @@ export function CubeStream({ svgRef, width, height, points, trucks, items, tickM
     ctx.setTransform(s * dpr, 0, 0, s * dpr, 0, 0)
     const n = pts.length
     const t = still ? 1 : Math.min(1, (now - tickAt.current) / ms)
-    // cubes on the belt, sorted top-to-bottom so lower ones overlap upper ones
-    const draws: { x: number; y: number; s: number; c: number; a: number }[] = []
     // point + direction at a fractional conveyor index (follows the curve, wraps around the loop)
     const at = (f: number) => {
       const g = ((f % n) + n) % n
@@ -122,26 +171,43 @@ export function CubeStream({ svgRef, width, height, points, trucks, items, tickM
       const len = Math.hypot(dx, dy) || 1
       return { x: a[0] + dx * k, y: a[1] + dy * k, ux: dx / len, uy: dy / len }
     }
-    const stepLen = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) || 34
-    for (const [id, it] of tracked.current) {
+    // group the belt cubes into runs of one colour standing next to each other: each run is one bar
+    const segs: { base: number; color: number; grow: number }[] = []
+    for (const it of tracked.current.values()) {
       if (!pts[it.pos]) continue
       const advanced = it.prev !== it.pos && (it.prev + 1) % n === it.pos
-      const base = advanced ? it.prev + t : it.pos
-      const grow = it.fresh && !still ? Math.min(1, 0.35 + ((now - it.born) / ms) * 0.65) : 1
-      for (const c of clusterOf(id)) {
-        // spread along the belt path (u) and across it (v), so the stream bends with the corners
-        const p = at(base + (c.u * grow) / stepLen)
-        draws.push({ x: p.x - p.uy * c.v * grow, y: p.y + p.ux * c.v * grow, s: c.s * grow, c: it.color, a: 1 })
+      const grow = it.fresh && !still ? Math.min(1, Math.max(0, (now - it.born) / ms)) : 1
+      segs.push({ base: advanced ? it.prev + t : it.pos, color: it.color, grow })
+    }
+    segs.sort((p, q) => p.base - q.base)
+    const runs: { from: number; to: number; color: number }[] = []
+    for (const g of segs) {
+      const last = runs[runs.length - 1]
+      // the newest cube of a run is still filling up as its small cubes land
+      const lead = 0.5 * g.grow
+      if (last && last.color === g.color && g.base - last.to < 1.05) last.to = g.base + lead
+      else runs.push({ from: g.base - 0.5, to: g.base + lead, color: g.color })
+    }
+    // a run crossing the loop's start point continues at the other end
+    if (runs.length > 1) {
+      const first = runs[0]
+      const last = runs[runs.length - 1]
+      if (first.color === last.color && first.from + n - last.to < 0.05) {
+        last.to = first.to + n
+        runs.shift()
       }
     }
+    for (const r of runs) drawBar(ctx, at, r.from, r.to, r.color)
+    // small cubes pouring between trucks and the belt, sorted top-to-bottom so lower ones overlap upper ones
+    const draws: { x: number; y: number; s: number; c: number; a: number }[] = []
     // cubes flying into the truck that picked them up
     ghosts.current = ghosts.current.filter((g) => now - g.start < GHOST_MS)
     for (const g of ghosts.current) {
+      if (now < g.start) continue
       const k = (now - g.start) / GHOST_MS
-      const e = k * k
-      const x = g.from[0] + (g.to[0] - g.from[0]) * e
-      const y = g.from[1] + (g.to[1] - g.from[1]) * e
-      for (const c of clusterOf(g.seed).slice(0, 9)) draws.push({ x: x + c.u * (1 - k) * 0.6, y: y + c.v * (1 - k), s: c.s * (1 - k * 0.5), c: g.color, a: 1 - k * 0.6 })
+      const e = k * (2 - k) // ease out: quick start, gentle landing
+      const r = clusterOf(g.seed)[0]
+      draws.push({ x: g.from[0] + (g.to[0] - g.from[0]) * e + r.v * 0.25, y: g.from[1] + (g.to[1] - g.from[1]) * e, s: 6.5, c: g.color, a: 1 })
     }
     draws.sort((p, q) => p.y - q.y)
     for (const d of draws) drawCube(ctx, d.x, d.y, d.s, d.c, d.a)
@@ -173,8 +239,16 @@ export function CubeStream({ svgRef, width, height, points, trucks, items, tickM
         const spot = props.current.trucks.find((tr) => tr.pos === old.pos || tr.pos === (old.pos + 1) % props.current.points.length)
         if (!spot) continue
         const from = props.current.points[old.pos]
-        const to: [number, number] = [spot.x + spot.w / 2, spot.facing === 'up' ? spot.y + spot.h * 0.28 : spot.y + spot.h * 0.72]
-        ghosts.current.push({ color: old.color, from, to, start: now, seed: id })
+        const to = mouthOf(spot, 0.3)
+        for (let i = 0; i < TRICKLE; i += 1) ghosts.current.push({ color: old.color, from, to, start: now + i * TRICKLE_GAP_MS, seed: id * 8 + i })
+      }
+      // a cube just put on the belt pours out of its truck as a trickle of small cubes
+      for (const it of items) {
+        if (prev.has(it.id)) continue
+        const spot = props.current.trucks.find((tr) => tr.pos === it.pos)
+        if (!spot) continue
+        const to = props.current.points[it.pos]
+        for (let i = 0; i < TRICKLE; i += 1) ghosts.current.push({ color: it.color, from: mouthOf(spot, 0.05), to, start: now + i * TRICKLE_GAP_MS * 0.6, seed: it.id * 8 + i })
       }
     }
     tracked.current = next
