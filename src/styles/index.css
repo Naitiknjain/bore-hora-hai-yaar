@@ -112,6 +112,17 @@ html[data-reduced-motion='on'] *::after {
   background-size: 18px 18px;
 }
 
+/* Chakkar Cubes: confetti that bursts once from a truck when it is completed */
+@keyframes cc-confetti {
+  from { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  to { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+}
+.cc-confetti {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cc-confetti 0.9s cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
+}
+
 @keyframes belt {
   to { stroke-dashoffset: -16; }
 }
