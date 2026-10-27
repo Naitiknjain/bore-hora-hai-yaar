@@ -14,6 +14,8 @@ interface TrackProps {
   points: [number, number][]
   /** Part of the loop that runs through a hidden tunnel (not drawn); its ends get caps. */
   tunnel?: { x: number; y: number; w: number; h: number }
+  /** conveyor at capacity: the rim glows red, like the reference */
+  full?: boolean
 }
 
 const rr = (x: number, y: number, w: number, h: number, r: number) => {
@@ -25,7 +27,7 @@ const rr = (x: number, y: number, w: number, h: number, r: number) => {
  * Raised conveyor loop: floor shadow, lit outer rim, recessed channel, inner rim lip and
  * engraved direction arrows. Pure decoration (no pointer events).
  */
-export const Track = memo(function Track({ x, y, w, h, radius, width = 34, points, tunnel }: TrackProps) {
+export const Track = memo(function Track({ x, y, w, h, radius, width = 34, points, tunnel, full }: TrackProps) {
   const rim = width + 18
   const half = rim / 2
   // arrows halfway between consecutive belt positions, pointing in travel direction
@@ -67,6 +69,13 @@ export const Track = memo(function Track({ x, y, w, h, radius, width = 34, point
       <rect {...rr(x + half - 1.5, y + half - 1.5, w - rim + 3, h - rim + 3, Math.max(6, radius - half + 1.5))} fill="none" stroke="rgba(184,180,216,0.85)" strokeWidth={2} />
       <rect {...rr(x - width / 2, y - width / 2, w + width, h + width, radius + width / 2)} fill="none" stroke="rgba(14,12,48,0.75)" strokeWidth={1.5} />
       <rect {...rr(x + width / 2, y + width / 2, w - width, h - width, Math.max(4, radius - width / 2))} fill="none" stroke="rgba(14,12,48,0.75)" strokeWidth={1.5} />
+      {full && (
+        <g className="motion-safe:animate-pulse">
+          <rect {...rr(x, y, w, h, radius)} fill="none" stroke="#ff4d6a" strokeOpacity={0.4} strokeWidth={rim} />
+          <rect {...rr(x - half + 1.5, y - half + 1.5, w + rim - 3, h + rim - 3, radius + half - 1.5)} fill="none" stroke="#ff7088" strokeWidth={3} />
+          <rect {...rr(x + half - 1.5, y + half - 1.5, w - rim + 3, h - rim + 3, Math.max(6, radius - half + 1.5))} fill="none" stroke="#ff7088" strokeWidth={2.5} />
+        </g>
+      )}
       {/* engraved direction arrows */}
       {arrows.map((a, i) => (
         <path

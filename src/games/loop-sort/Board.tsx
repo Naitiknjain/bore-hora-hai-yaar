@@ -5,7 +5,7 @@ import { CubeStream } from './art/CubeStream'
 import { ArtDefs } from './art/defs'
 import { Track } from './art/Track'
 import { TruckGradients, TruckSprite } from './art/TruckSprite'
-import { boardLayout, isLocked, type LoopState, type Truck, type TruckSpot } from './logic'
+import { boardLayout, isFrozen, isLocked, type LoopState, type Truck, type TruckSpot } from './logic'
 
 export { BLOCK_COLORS, BLOCK_NAMES } from './art/Block3D'
 
@@ -23,6 +23,8 @@ interface Props {
   shakeTruck: number | null
   highlightTrucks: number[]
   justAdded: number | null
+  /** the conveyor is at capacity: the track glows red */
+  full?: boolean
   onTruck: (i: number) => void
 }
 
@@ -61,11 +63,14 @@ const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked
       />
     )
   }
+  const frozen = isFrozen(t)
   const label = t.done
     ? `Truck ${i + 1}: complete`
-    : locked
+    : frozen
+      ? `Truck ${i + 1}: frozen until the truck next to it is filled`
+      : locked
       ? `Truck ${i + 1}: curtain closed until ${BLOCK_NAMES[t.lock ?? 0]} is sorted`
-      : `Truck ${i + 1}: ${t.blocks.length ? `top ${BLOCK_NAMES[t.blocks[t.blocks.length - 1]]}, ${t.blocks.length} of 4` : 'empty'}`
+      : `Truck ${i + 1}: ${t.blocks.length ? `top ${BLOCK_NAMES[t.blocks[t.blocks.length - 1]]}, ${t.blocks.length} of 4` : 'empty'}${t.barrier ? ', barrier (cubes can go in, not out)' : ''}`
   return (
     <g
       role="button"
@@ -91,7 +96,7 @@ const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked
       )}
       {/* inner group so the tap press doesn't fight the shake/pop animations on the outer one */}
       <g className="cc-truck">
-        <TruckSprite {...spot} blocks={t.blocks} hidden={hidden} done={t.done} locked={locked} lockColor={t.lock} settleFrom={grewFrom} />
+        <TruckSprite {...spot} blocks={t.blocks} hidden={hidden} done={t.done} locked={locked} lockColor={t.lock} settleFrom={grewFrom} barrier={t.barrier} frozen={frozen} thawed={t.thawed} />
       </g>
     </g>
   )
@@ -102,10 +107,12 @@ const BoardBase = memo(function BoardBase({
   loop,
   points,
   tunnel,
+  full,
 }: {
   loop: { x: number; y: number; w: number; h: number; r: number }
   points: [number, number][]
   tunnel?: { x: number; y: number; w: number; h: number }
+  full?: boolean
 }) {
   return (
     <>
@@ -114,12 +121,12 @@ const BoardBase = memo(function BoardBase({
         <BlockGradients />
         <TruckGradients />
       </defs>
-      <Track x={loop.x} y={loop.y} w={loop.w} h={loop.h} radius={loop.r} points={points} tunnel={tunnel} />
+      <Track x={loop.x} y={loop.y} w={loop.w} h={loop.h} radius={loop.r} points={points} tunnel={tunnel} full={full} />
     </>
   )
 })
 
-export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightTrucks, justAdded, onTruck }: Props) {
+export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightTrucks, justAdded, full, onTruck }: Props) {
   // geometry depends only on the number of docks (cached), so static layers never re-render
   const b = useMemo(() => boardLayout(state.trucks.length, state.style, state.spares), [state.trucks.length, state.style, state.spares])
   const svgRef = useRef<SVGSVGElement>(null)
@@ -138,7 +145,7 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
         role="group"
         aria-label="Chakkar Cubes board"
       >
-        <BoardBase loop={b.loop} points={b.points} tunnel={b.tunnel} />
+        <BoardBase loop={b.loop} points={b.points} tunnel={b.tunnel} full={full} />
         {state.trucks.map((t, i) => (
           <TruckButton
             key={i}

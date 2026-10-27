@@ -29,6 +29,10 @@ export const SPARE_DOCKS = 2
 export interface TruckDef {
   blocks: number[]
   lock?: number // curtain: opens once this colour is completed
+  /** barrier: cubes can drop in, but the truck can never be tapped (its cubes cannot leave) */
+  barrier?: boolean
+  /** ice: frozen (no tap, takes no cubes) until the neighbouring truck with this index is filled */
+  ice?: number
 }
 
 export interface LevelDef {
@@ -53,6 +57,11 @@ export interface Truck {
   inactive?: boolean
   /** Cubes already tapped out of this truck, waiting to drop onto the conveyor (one per step). */
   outgoing?: number[]
+  barrier?: boolean
+  /** still frozen: index of the truck that has to be filled to break the ice */
+  ice?: number
+  /** the ice has broken (plays the shatter once) */
+  thawed?: boolean
 }
 
 export interface LoopState {
@@ -325,7 +334,14 @@ export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity' | 'styl
   const spare = Math.max(0, Math.min(spareDocks, MAX_TRUCKS - level.trucks.length))
   const total = level.trucks.length + spare
   const layout = beltLayout(total, level.style, spare)
-  const trucks: Truck[] = level.trucks.map((t, i) => ({ blocks: t.blocks.slice(), lock: t.lock, done: false, pos: layout.truckPos[i] }))
+  const trucks: Truck[] = level.trucks.map((t, i) => ({
+    blocks: t.blocks.slice(),
+    lock: t.lock,
+    done: false,
+    pos: layout.truckPos[i],
+    ...(t.barrier ? { barrier: true } : {}),
+    ...(t.ice !== undefined ? { ice: t.ice } : {}),
+  }))
   for (let i = level.trucks.length; i < total; i += 1) trucks.push({ blocks: [], done: false, pos: layout.truckPos[i], inactive: true })
   const belt = Array(layout.length).fill(null)
   return { style: level.style, spares: spare, trucks, belt, capacity: Math.min(level.capacity, belt.length - 2), completed: [] }
@@ -338,6 +354,7 @@ export const outgoingCount = (s: LoopState) => s.trucks.reduce((n, t) => n + (t.
 export const conveyorLoad = (s: LoopState) => beltCount(s) + outgoingCount(s)
 export const freeSpace = (s: LoopState) => s.capacity - conveyorLoad(s)
 export const isLocked = (s: LoopState, t: Truck) => t.lock !== undefined && !s.completed.includes(t.lock)
+export const isFrozen = (t: Truck) => t.ice !== undefined
 
 /** Top group of identical colours (what a tap would unload). */
 export function topRun(t: Truck): number[] {
@@ -348,7 +365,7 @@ export function topRun(t: Truck): number[] {
   return t.blocks.slice(k)
 }
 
-export type TapError = 'empty' | 'locked' | 'done' | 'belt-full' | 'invalid'
+export type TapError = 'empty' | 'locked' | 'frozen' | 'barrier' | 'done' | 'belt-full' | 'invalid'
 
 /** Why a truck cannot be tapped right now (null = it can). `belt-full` = not enough space. */
 export function canTap(s: LoopState, i: number): TapError | null {
@@ -356,7 +373,9 @@ export function canTap(s: LoopState, i: number): TapError | null {
   if (!t || t.inactive) return 'invalid'
   if (t.done) return 'done'
   if (isLocked(s, t)) return 'locked'
+  if (isFrozen(t)) return 'frozen'
   if (!t.blocks.length) return 'empty'
+  if (t.barrier) return 'barrier'
   if (topRun(t).length > freeSpace(s)) return 'belt-full'
   return null
 }
@@ -393,7 +412,7 @@ export function attemptTap(s: LoopState, i: number, trigger: 'tap-exceeds-capaci
 }
 
 export function accepts(s: LoopState, t: Truck, color: number): boolean {
-  if (t.inactive || t.done || isLocked(s, t) || t.outgoing?.length || t.blocks.length >= TRUCK_CAPACITY) return false
+  if (t.inactive || t.done || isLocked(s, t) || isFrozen(t) || t.outgoing?.length || t.blocks.length >= TRUCK_CAPACITY) return false
   return !t.blocks.length || t.blocks[t.blocks.length - 1] === color
 }
 
@@ -428,6 +447,16 @@ export function tick(s: LoopState): TickResult {
     }
     absorbed.push({ truck: i, color: c })
   })
+  // ice breaks as soon as the truck next to it is filled up (or completed)
+  if (absorbed.length && trucks.some(isFrozen)) {
+    trucks = trucks.map((t) => {
+      if (!isFrozen(t)) return t
+      const n = trucks[t.ice!]
+      if (!n || !(n.done || n.blocks.length >= TRUCK_CAPACITY)) return t
+      const { ice: _ice, ...rest } = t
+      return { ...rest, thawed: true }
+    })
+  }
   // trucks with a pending stream drop their next cube onto their own (now empty) position;
   // it moves on next step and is offered to every truck it passes
   const emitted: { truck: number; pos: number; color: number }[] = []
@@ -458,7 +487,7 @@ export const isWon = (s: LoopState) => conveyorLoad(s) === 0 && s.trucks.every((
 /** True when blocks remain but no truck could ever be tapped (even with unlimited space). */
 export function hasNoMoves(s: LoopState): boolean {
   if (isWon(s) || outgoingCount(s) > 0) return false
-  return s.trucks.every((t) => t.inactive || t.done || isLocked(s, t) || t.blocks.length === 0)
+  return s.trucks.every((t) => t.inactive || t.done || isLocked(s, t) || isFrozen(t) || t.barrier || t.blocks.length === 0)
 }
 
 /** Legacy 'jammed' rule: settled and no tap fits. */
@@ -491,7 +520,7 @@ export function addTruck(s: LoopState): LoopState {
 /** Trucks whose cube order can be shuffled (2+ cubes, not all one colour, open). */
 export function canShuffle(s: LoopState, i: number): boolean {
   const t = s.trucks[i]
-  if (!t || t.inactive || t.done || isLocked(s, t) || t.blocks.length < 2) return false
+  if (!t || t.inactive || t.done || isLocked(s, t) || isFrozen(t) || t.blocks.length < 2) return false
   return new Set(t.blocks).size > 1
 }
 
@@ -524,7 +553,7 @@ export function undoTo(previous: LoopState, current: LoopState): LoopState {
 // Solvers
 // ---------------------------------------------------------------------------
 export function stateKey(s: LoopState): string {
-  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : t.blocks.join('') + (t.outgoing?.length ? `>${t.outgoing.join('')}` : ''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}`
+  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : (isFrozen(t) ? '*' : '') + t.blocks.join('') + (t.outgoing?.length ? `>${t.outgoing.join('')}` : ''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}`
 }
 
 /**
@@ -705,16 +734,60 @@ export function levelParams(n: number) {
   const capacity = n <= 6 ? 8 : n <= 20 ? 7 : n <= 40 ? 6 : 5
   const hidden = n >= 6
   const curtain = n >= 18 && n % 3 === 0
+  // obstacles, on a compressed version of the reference's pacing (re-paced with the long campaign)
+  const barrier = n >= 20 && (n % 3 === 1 || (n >= 45 && n % 4 === 0))
+  const ice = n >= 29 && (n % 3 === 2 || (n >= 45 && n % 4 === 2))
   // layouts in the reference's order: rows first, stacked sideways trucks from level 3, the C-shaped
   // tunnel track from level 7, then a mix
   const style: LayoutStyle = n <= 2 ? 'rows' : n <= 6 ? 'stack' : (['tunnel', 'rows', 'stack'] as const)[(n - 7) % 3]
-  return { colors, empties, capacity, hidden, curtain, style }
+  return { colors, empties, capacity, hidden, curtain, barrier, ice, style }
 }
 
 /** Level 1 is a one-tap tutorial: one colour split over two trucks. */
 function tutorialLevel(): LevelDef {
   const def = { style: 'rows' as const, trucks: [{ blocks: [0, 0, 0] }, { blocks: [0] }], capacity: 7 }
   return { n: 1, colors: 1, hidden: false, ...def, solution: solveLevel(def, 80000, initialState(def, SPARE_DOCKS)) ?? [] }
+}
+
+/** Trucks standing right next to truck `i` in the same row of the board. */
+export function neighbours(layout: BoardLayout, i: number): number[] {
+  const me = layout.trucks[i]
+  const across = me.row === 'inner-stack' ? 'y' : 'x'
+  const row = layout.trucks.map((t, k) => ({ t, k })).filter(({ t }) => t.row === me.row).sort((a, b) => a.t[across] - b.t[across])
+  const at = row.findIndex(({ k }) => k === i)
+  return [row[at - 1]?.k, row[at + 1]?.k].filter((k): k is number => k !== undefined)
+}
+
+/** Places this level's obstacles on a dealt board; returns null when the board has no room for them. */
+function placeObstacles(trucks: TruckDef[], p: ReturnType<typeof levelParams>, rand: () => number): TruckDef[] | null {
+  const out = trucks.map((t) => ({ ...t, blocks: t.blocks.slice() }))
+  const pick = <T,>(xs: T[]) => xs[Math.floor(rand() * xs.length)]
+  if (p.barrier) {
+    // a barrier truck only ever collects, so it starts empty or with a single cube taken from another truck
+    const empties = out.map((t, i) => (t.blocks.length ? -1 : i)).filter((i) => i >= 0)
+    if (empties.length < 2) out.splice(Math.floor(rand() * (out.length + 1)), 0, { blocks: [] })
+    const free = out.map((t, i) => (t.blocks.length ? -1 : i)).filter((i) => i >= 0)
+    const b = pick(free)
+    if (rand() < 0.5) {
+      const donors = out.map((t, i) => (t.blocks.length === TRUCK_CAPACITY && t.lock === undefined ? i : -1)).filter((i) => i >= 0)
+      const d = pick(donors)
+      if (d !== undefined) out[b].blocks.push(out[d].blocks.pop()!)
+    }
+    out[b].barrier = true
+  }
+  if (p.ice) {
+    // the ice breaks when the empty truck next to it is filled up
+    const layout = boardLayout(Math.min(MAX_TRUCKS, out.length + SPARE_DOCKS), p.style, Math.min(SPARE_DOCKS, MAX_TRUCKS - out.length))
+    const options: [number, number][] = []
+    out.forEach((t, i) => {
+      if (!t.blocks.length || t.barrier || t.lock !== undefined) return
+      for (const k of neighbours(layout, i)) if (k < out.length && !out[k].blocks.length && !out[k].barrier) options.push([i, k])
+    })
+    if (!options.length) return null
+    const [i, k] = pick(options)
+    out[i].ice = k
+  }
+  return out
 }
 
 export function generateLevel(n: number): LevelDef {
@@ -728,18 +801,20 @@ export function generateLevel(n: number): LevelDef {
       const j = Math.floor(rand() * (i + 1))
       ;[pool[i], pool[j]] = [pool[j], pool[i]]
     }
-    const trucks: TruckDef[] = []
+    let trucks: TruckDef[] = []
     for (let i = 0; i < p.colors; i += 1) trucks.push({ blocks: pool.slice(i * 4, i * 4 + 4) })
     // a truck that is already complete makes the level boring
     if (trucks.some((t) => t.blocks.every((b) => b === t.blocks[0]))) continue
     for (let e = 0; e < p.empties; e += 1) trucks.splice(Math.floor(rand() * (trucks.length + 1)), 0, { blocks: [] })
-    if (trucks.length > 10) continue
     if (p.curtain) {
       const candidates = trucks.map((t, i) => (t.blocks.length ? i : -1)).filter((i) => i >= 0)
       const idx = candidates[Math.floor(rand() * candidates.length)]
       const lockColor = Math.floor(rand() * p.colors)
       if (!trucks[idx].blocks.includes(lockColor)) trucks[idx] = { ...trucks[idx], lock: lockColor }
     }
+    const placed = placeObstacles(trucks, p, rand)
+    if (!placed || placed.length > 10) continue
+    trucks = placed
     const def = { trucks, capacity: p.capacity, style: p.style }
     // solve the exact board a Normal Mode player gets (with its spare Extra Truck docks)
     const board = initialState(def, SPARE_DOCKS)

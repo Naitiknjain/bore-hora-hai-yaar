@@ -33,6 +33,26 @@ import { canShuffle, conveyorLoad, nextSpareDock, tick, type LevelDef, type Loop
 import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton, SlotPlusIcon, TruckPlusIcon } from './ui'
 
 const LEVELS = levelsData as LevelDef[]
+
+/** Obstacles get a short introduction card on the first level that uses them. */
+type Obstacle = 'barrier' | 'ice'
+const OBSTACLES: Record<Obstacle, { title: string; emoji: string; text: string; has: (l: LevelDef) => boolean }> = {
+  barrier: {
+    title: 'Barrier',
+    emoji: '🚧',
+    text: 'Cubes can go into a truck behind a barrier, but they can never come out. Only send it the colour it needs.',
+    has: (l) => l.trucks.some((t) => t.barrier),
+  },
+  ice: {
+    title: 'Ice',
+    emoji: '🧊',
+    text: 'A frozen truck takes no cubes and cannot be tapped. Fill up the truck next to it to break the ice.',
+    has: (l) => l.trucks.some((t) => t.ice !== undefined),
+  },
+}
+const INTRO_LEVEL = Object.fromEntries(
+  (Object.keys(OBSTACLES) as Obstacle[]).map((k) => [LEVELS.find(OBSTACLES[k].has)?.n ?? 0, k]),
+) as Record<number, Obstacle>
 // one belt step; ~170ms gives the reference's calm pace (about 6 s per lap on level 1)
 const TICK_MS = 170
 
@@ -137,6 +157,7 @@ export default function LoopSort() {
   const [message, setMessage] = useState<string | null>(null)
   const [shuffleMode, setShuffleMode] = useState(false)
   const [justAdded, setJustAdded] = useState<number | null>(null)
+  const [intro, setIntro] = useState<Obstacle | null>(null)
   const [confirm, setConfirm] = useState<null | 'restart' | 'leave'>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const { settings, update } = useSettings()
@@ -199,6 +220,7 @@ export default function LoopSort() {
     setMessage(null)
     setShuffleMode(false)
     setJustAdded(null)
+    setIntro(INTRO_LEVEL[n] ?? null)
     recorded.current = false
     idle.current = 0
     setScreen('play')
@@ -294,7 +316,11 @@ export default function LoopSort() {
       setMessage(
         r === 'locked'
           ? `Curtain closed - sort ${BLOCK_NAMES[a.state.trucks[i].lock ?? 0]} first.`
-          : r === 'empty'
+          : r === 'frozen'
+            ? 'Frozen! Fill the truck next to it to break the ice.'
+            : r === 'barrier'
+              ? 'A barrier blocks this truck - cubes can go in, but not out.'
+              : r === 'empty'
             ? 'This truck is empty.'
             : r === 'done'
               ? 'That truck is done.'
@@ -542,7 +568,7 @@ export default function LoopSort() {
   return (
     <div className={`${shell} flex min-h-0 w-full flex-1 flex-col short:p-3`}>
       {/* HUD: level on the left, cube counter in the middle, lives and the gear on the right (like the reference) */}
-      <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-1.5 min-[380px]:gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-1.5 min-[380px]:gap-2">
         <div className="flex min-w-0 items-center gap-1.5 min-[380px]:gap-2">
         <RoundIconButton label="Back to Chakkar Cubes home" onClick={() => (costsLife ? setConfirm('leave') : setScreen('home'))}>
           <ArrowLeft className="size-5" strokeWidth={2.8} />
@@ -556,9 +582,9 @@ export default function LoopSort() {
         </HudPill>
         </div>
         <HudPill tone={full ? 'danger' : 'default'} label={`Conveyor ${count} of ${board.capacity} cubes`} testId="conveyor-count">
-          <Box className="size-5 max-[359px]:hidden" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
+          <Box className="size-5 max-[399px]:size-4" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
         </HudPill>
-        <div className="flex min-w-0 items-center justify-end gap-1.5 min-[380px]:gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 min-[380px]:gap-2">
           <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} compact />
           <RoundIconButton label="Game menu" onClick={() => setMenuOpen(true)}>
             <Settings className="size-5" strokeWidth={2.6} />
@@ -577,8 +603,20 @@ export default function LoopSort() {
             shakeTruck={shake}
             highlightTrucks={shuffleTargets}
             justAdded={justAdded}
+            full={full}
             onTruck={onTruck}
           />
+          {intro && status === 'playing' && (
+            <Popup label={`New obstacle: ${OBSTACLES[intro].title}`} emoji={OBSTACLES[intro].emoji} title={OBSTACLES[intro].title}>
+              <p className="mt-1 text-xs font-extrabold uppercase tracking-wider text-[#7a5ce0]">New obstacle</p>
+              <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">{OBSTACLES[intro].text}</p>
+              <div className="mt-4 grid">
+                <ChunkyButton onClick={() => setIntro(null)} data-autofocus>
+                  Got it
+                </ChunkyButton>
+              </div>
+            </Popup>
+          )}
           {status === 'won' && (
             <Popup label="Level complete" emoji="🎉" title={`Level ${level.n} done!`}>
               <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">Saare cubes sorted. Shabaash!</p>

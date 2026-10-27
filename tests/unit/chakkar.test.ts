@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import levels from '../../src/games/loop-sort/levels.json'
 import { CHAKKAR_CONFIG, continuesLeft, usesLeft, type ChakkarConfig } from '../../src/games/loop-sort/config'
 import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, applyAbility, type Attempt } from '../../src/games/loop-sort/attempt'
-import { attemptTap, beltCount, beltLayout, boardLayout, conveyorLoad, freeSpace, initialState, maxCapacity, MAX_TRUCKS, replay, settle, SPARE_DOCKS, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
+import { attemptTap, beltCount, beltLayout, boardLayout, conveyorLoad, freeSpace, initialState, isWon, maxCapacity, MAX_TRUCKS, neighbours, replay, settle, SPARE_DOCKS, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
 
 const LEVELS = levels as LevelDef[]
 const lvl = (trucks: number[][], capacity: number, n = 1): LevelDef => ({ n, colors: 4, capacity, hidden: false, trucks: trucks.map((blocks) => ({ blocks })), solution: [] })
@@ -284,6 +284,53 @@ describe('layouts', () => {
         const [x, y] = b.points[spot.pos]
         // every loading point is clearly outside the tunnel and its end caps
         expect(x < t.x + t.w + 12 && y >= t.y && y <= t.y + t.h, `level ${l.n}`).toBe(false)
+      }
+    }
+  })
+})
+
+describe('obstacles', () => {
+  it('barrier: the truck takes matching cubes but can never be tapped', () => {
+    const def: LevelDef = { ...lvl([[2], [], [1]], 6), trucks: [{ blocks: [2] }, { blocks: [], barrier: true }, { blocks: [1] }] }
+    let s = initialState(def)
+    expect(tap(s, 1).error).toBe('empty')
+    s = settle(tap(s, 2).state) // the lone cube passes truck 0 (wrong colour) and drops behind the barrier
+    expect(s.trucks[1].blocks).toEqual([1])
+    expect(tap(s, 1).error).toBe('barrier')
+    expect(isWon(s)).toBe(false) // stuck there until the truck is sorted
+  })
+
+  it('ice: frozen trucks neither take nor send cubes until the truck next to it is filled', () => {
+    const def: LevelDef = { ...lvl([[2, 1], [], [3, 3, 1, 1]], 6), trucks: [{ blocks: [2, 1] }, { blocks: [] }, { blocks: [3, 3, 1, 1], ice: 1 }] }
+    let s = initialState(def)
+    expect(tap(s, 2).error).toBe('frozen')
+    s = settle(tap(s, 0).state) // the 1 lands in the empty truck 1, the frozen truck ignores it
+    expect(s.trucks[1].blocks).toEqual([1])
+    expect(s.trucks[2].ice).toBe(1)
+    // fill truck 1 to the top: the ice breaks
+    s = { ...s, trucks: s.trucks.map((t, i) => (i === 1 ? { ...t, blocks: [1, 2, 2] } : t)), belt: s.belt.map((_, p) => (p === s.trucks[1].pos - 1 ? 2 : null)) }
+    s = tick(s).state
+    expect(s.trucks[1].blocks.length).toBe(4)
+    expect(s.trucks[2].ice).toBeUndefined()
+    expect(s.trucks[2].thawed).toBe(true)
+    expect(tap(s, 2).error).toBeNull()
+  })
+
+  it('levels introduce barriers and ice, and every obstacle level is winnable as stored', () => {
+    const withBarrier = LEVELS.filter((l) => l.trucks.some((t) => t.barrier))
+    const withIce = LEVELS.filter((l) => l.trucks.some((t) => t.ice !== undefined))
+    expect(withBarrier.length).toBeGreaterThan(5)
+    expect(withIce.length).toBeGreaterThan(5)
+    for (const l of [...withBarrier, ...withIce]) {
+      expect(replay(l, l.solution), `level ${l.n}`).toBe(true)
+      for (const t of l.trucks) {
+        // a barrier truck can only ever collect, so it starts with at most one colour
+        if (t.barrier) expect(new Set(t.blocks).size, `level ${l.n}`).toBeLessThanOrEqual(1)
+        // ice always sits next to a truck that still has room to fill
+        if (t.ice !== undefined) {
+          expect(l.trucks[t.ice].blocks.length, `level ${l.n}`).toBeLessThan(4)
+          expect(neighbours(boardLayout(initialState(l, SPARE_DOCKS).trucks.length, l.style, initialState(l, SPARE_DOCKS).spares), l.trucks.indexOf(t))).toContain(t.ice)
+        }
       }
     }
   })

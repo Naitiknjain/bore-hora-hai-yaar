@@ -9,7 +9,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 export function HudPill({ children, tone = 'default', label, testId }: { children: ReactNode; tone?: 'default' | 'danger'; label?: string; testId?: string }) {
   return (
     <div
-      className={`flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border-[3px] px-2 font-display text-base min-[380px]:gap-1.5 min-[380px]:px-3 min-[380px]:text-lg font-extrabold leading-none shadow-[inset_0_2px_0_rgba(255,255,255,0.06),0_3px_0_rgba(6,4,24,0.45)] ${
+      className={`flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border-[3px] px-2 font-display text-base min-[380px]:gap-1.5 min-[380px]:text-lg min-[420px]:px-3 font-extrabold leading-none shadow-[inset_0_2px_0_rgba(255,255,255,0.06),0_3px_0_rgba(6,4,24,0.45)] ${
         tone === 'danger' ? 'border-[#ff9aa6] bg-[#c42840] text-white' : 'border-[#8b5de2] bg-[#0c1360] text-[#e4e8f6]'
       }`}
       aria-label={label}

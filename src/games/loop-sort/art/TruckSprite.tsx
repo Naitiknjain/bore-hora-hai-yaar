@@ -22,6 +22,11 @@ export function TruckGradients() {
         <stop offset="0.6" stopColor="#9fd6ff" />
         <stop offset="1" stopColor="#6aa8ef" />
       </linearGradient>
+      <linearGradient id="cc-ice" x1="0" y1="0" x2="0.6" y2="1">
+        <stop offset="0" stopColor="#d6f0ff" />
+        <stop offset="0.35" stopColor="#7cc2ff" />
+        <stop offset="1" stopColor="#2f6fe4" />
+      </linearGradient>
       <linearGradient id="cc-done" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stopColor="#6df0a6" />
         <stop offset="1" stopColor="#1fae5f" />
@@ -44,6 +49,12 @@ interface Props {
   lockColor?: number
   /** index of the first cube that just landed (plays the settle animation), or -1 */
   settleFrom?: number
+  /** barrier: striped posts in front of the truck (they sink once it is sorted) */
+  barrier?: boolean
+  /** covered in ice */
+  frozen?: boolean
+  /** the ice just broke: shards fly off once */
+  thawed?: boolean
 }
 
 /**
@@ -71,7 +82,7 @@ export function TruckSprite(props: Props) {
   )
 }
 
-function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
+function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, barrier, frozen, thawed, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
   const up = facing === 'up'
   const bodyX = x + w * 0.05
   const bodyW = w * 0.9
@@ -137,8 +148,76 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
           strokeLinejoin="round"
         />
       )}
+      {barrier && [-1, 1].map((side) => (
+          // in front of the truck when there is room; sideways trucks sit close to the belt, so on the hood
+          <Bollard key={side} cx={bodyX + bodyW / 2 + side * bodyW * 0.2} cy={turn ? hoodY + hoodH / 2 : up ? y - 9 : y + h + 5} r={Math.max(5, w * 0.085)} down={done} />
+        ))}
+      {frozen && <Ice x={bodyX} y={y} w={bodyW} h={topH + depth} r={r} />}
+      {thawed && <IceShards cx={bodyX + bodyW / 2} cy={y + topH / 2} spread={Math.max(bodyW, topH * 0.5)} />}
       {locked && <Curtain x={bodyX} y={y} w={bodyW} h={topH} r={r} color={BLOCK_COLORS[lockColor ?? 0]} />}
       {done && <Confetti cx={bodyX + bodyW / 2} cy={y + topH / 2} spread={Math.max(bodyW, topH * 0.6)} />}
+    </g>
+  )
+}
+
+/** A striped post seen from above; once the truck is sorted it sinks, leaving only its socket. */
+function Bollard({ cx, cy, r, down }: { cx: number; cy: number; r: number; down: boolean }) {
+  return (
+    <g aria-hidden>
+      <circle cx={cx} cy={cy + 1.5} r={r * 1.3} fill="rgba(6,4,24,0.45)" />
+      <circle cx={cx} cy={cy} r={r * 1.25} fill="#1a1536" stroke="#6f62a8" strokeWidth={1.2} />
+      {!down && (
+        <>
+          <circle cx={cx} cy={cy - 1} r={r} fill="#16121f" />
+          <circle cx={cx} cy={cy - 1.5} r={r * 0.8} fill="#ffc928" />
+          <circle cx={cx} cy={cy - 1.8} r={r * 0.55} fill="#16121f" />
+          <circle cx={cx} cy={cy - 2} r={r * 0.34} fill="#ffd84d" />
+          <circle cx={cx - r * 0.12} cy={cy - 2.3} r={r * 0.12} fill="#fff6c8" />
+        </>
+      )}
+    </g>
+  )
+}
+
+/** A clear-blue block of ice over the whole truck, with cracks and a shine. */
+function Ice({ x, y, w, h, r }: { x: number; y: number; w: number; h: number; r: number }) {
+  return (
+    <g aria-hidden>
+      <rect x={x - 2} y={y - 2} width={w + 4} height={h + 4} rx={r + 2} fill="url(#cc-ice)" opacity={0.94} stroke="#e8f7ff" strokeWidth={2} />
+      <path
+        d={`M ${x + w * 0.18} ${y + h * 0.12} l ${w * 0.22} ${h * 0.2} l ${-w * 0.08} ${h * 0.16} l ${w * 0.3} ${h * 0.22} M ${x + w * 0.4} ${y + h * 0.32} l ${w * 0.35} ${-h * 0.08} M ${x + w * 0.62} ${y + h * 0.7} l ${w * 0.2} ${h * 0.18} M ${x + w * 0.32} ${y + h * 0.48} l ${-w * 0.16} ${h * 0.22}`}
+        fill="none"
+        stroke="rgba(255,255,255,0.75)"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <rect x={x + w * 0.1} y={y + h * 0.05} width={w * 0.16} height={h * 0.88} rx={w * 0.08} fill="rgba(255,255,255,0.22)" />
+      <circle cx={x + w * 0.78} cy={y + h * 0.14} r={Math.max(1.5, w * 0.04)} fill="#ffffff" opacity={0.9} />
+    </g>
+  )
+}
+
+const SHARD_COLORS = ['#e8f7ff', '#a9dcff', '#6bb6ff', '#ffffff']
+
+/** Ice shards bursting off the truck; mounts when the ice breaks, so it plays exactly once. */
+function IceShards({ cx, cy, spread }: { cx: number; cy: number; spread: number }) {
+  return (
+    <g aria-hidden pointerEvents="none">
+      {Array.from({ length: 12 }, (_, i) => {
+        const a = (i / 12) * Math.PI * 2 + (i % 2) * 0.25
+        const d = spread * (0.4 + ((i * 29) % 10) / 25)
+        const s = 4 + (i % 3) * 2
+        return (
+          <path
+            key={i}
+            className="cc-confetti"
+            d={`M ${cx} ${cy - s} L ${cx + s * 0.8} ${cy + s * 0.5} L ${cx - s * 0.6} ${cy + s * 0.7} Z`}
+            fill={SHARD_COLORS[i % SHARD_COLORS.length]}
+            style={{ ['--dx' as string]: `${Math.cos(a) * d}px`, ['--dy' as string]: `${Math.sin(a) * d}px`, ['--rot' as string]: `${(i % 2 ? 1 : -1) * (120 + i * 25)}deg` }}
+          />
+        )
+      })}
     </g>
   )
 }
