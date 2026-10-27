@@ -1080,6 +1080,8 @@ function tryGenerate(n: number, p: ReturnType<typeof levelParams>, attempts: num
     const shortest = solveLevel(def, 15000, board)
     const minTaps = Math.min(3 + n / 6, 10) + (p.difficulty === 'super' ? 6 : p.difficulty === 'hard' ? 3 : 0)
     if (shortest && shortest.length < minTaps) continue
+    // a proof that needs a very long, roundabout tap sequence means a needlessly tangled board
+    if ((shortest ?? any).length > 80) continue
     return {
       n,
       style: p.style,
