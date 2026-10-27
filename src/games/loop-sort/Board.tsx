@@ -6,7 +6,7 @@ import { ArtDefs } from './art/defs'
 import { Track } from './art/Track'
 import { KEY_COLORS, TruckGradients, TruckSprite } from './art/TruckSprite'
 import { shade } from './art/Block3D'
-import { boardLayout, isFrozen, isLocked, isShut, isTied, type LoopState, type Truck, type TruckSpot } from './logic'
+import { boardLayout, isCarpeted, isFrozen, isLocked, isShut, isTied, type LoopState, type Truck, type TruckSpot } from './logic'
 
 export { BLOCK_COLORS, BLOCK_NAMES } from './art/Block3D'
 
@@ -36,6 +36,7 @@ interface TruckButtonProps {
   locked: boolean
   shut: boolean
   tied: boolean
+  carpeted: boolean
   hidden: boolean
   shake: boolean
   highlight: boolean
@@ -44,7 +45,7 @@ interface TruckButtonProps {
 }
 
 /** One tappable truck. Memoised: it only re-renders when its own cargo or state changes. */
-const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked, shut, tied, hidden, shake, highlight, justAdded, onTruck }: TruckButtonProps) {
+const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked, shut, tied, carpeted, hidden, shake, highlight, justAdded, onTruck }: TruckButtonProps) {
   // remember how many cubes the truck held, so cubes that just landed can play the settle animation
   const [seen, setSeen] = useState({ blocks: t.blocks, grewFrom: -1 })
   if (seen.blocks !== t.blocks) setSeen({ blocks: t.blocks, grewFrom: t.blocks.length > seen.blocks.length ? seen.blocks.length : -1 })
@@ -73,9 +74,11 @@ const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked
       ? `Truck ${i + 1}: frozen until the truck next to it is filled`
       : shut
         ? `Truck ${i + 1}: behind a locked shutter`
+        : carpeted
+          ? `Truck ${i + 1}: under the carpet`
       : locked
       ? `Truck ${i + 1}: curtain closed until ${BLOCK_NAMES[t.lock ?? 0]} is sorted`
-      : `Truck ${i + 1}: ${t.blocks.length ? `top ${BLOCK_NAMES[t.blocks[t.blocks.length - 1]]}, ${t.blocks.length} of 4` : 'empty'}${t.barrier ? ', barrier (cubes can go in, not out)' : ''}${tied ? ', tied by a rope' : ''}${t.tag !== undefined ? `, only takes ${BLOCK_NAMES[t.tag]}` : ''}${t.key !== undefined ? ', carries a key' : ''}`
+      : `Truck ${i + 1}: ${t.blocks.length ? `top ${BLOCK_NAMES[t.blocks[t.blocks.length - 1]]}, ${t.blocks.length} of 4` : 'empty'}${t.barrier ? ', barrier (cubes can go in, not out)' : ''}${tied ? ', tied by a rope' : ''}${t.tag !== undefined ? `, only takes ${BLOCK_NAMES[t.tag]}` : ''}${t.key !== undefined ? ', carries a key' : ''}${t.queue?.length ? `, spawner with ${t.queue.length} more to come` : ''}${t.screws?.length ? ', screwed groups leave together' : ''}`
   return (
     <g
       role="button"
@@ -101,7 +104,7 @@ const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked
       )}
       {/* inner group so the tap press doesn't fight the shake/pop animations on the outer one */}
       <g className="cc-truck">
-        <TruckSprite {...spot} blocks={t.blocks} hidden={hidden} done={t.done} locked={locked} lockColor={t.lock} settleFrom={grewFrom} barrier={t.barrier} frozen={frozen} thawed={t.thawed} tint={t.tag} keyId={t.key} />
+        <TruckSprite {...spot} blocks={t.blocks} hidden={hidden} done={t.done} locked={locked} lockColor={t.lock} settleFrom={grewFrom} barrier={t.barrier} frozen={frozen} thawed={t.thawed} tint={t.tag} keyId={t.key} queue={t.queue} screws={t.screws} />
       </g>
     </g>
   )
@@ -156,6 +159,70 @@ function Shutters({ state, spots }: { state: LoopState; spots: TruckSpot[] }) {
             <rect x={cx - lw * 0.36} y={cy - lw * 0.04} width={lw * 0.3} height={lw * 0.12} rx={lw * 0.06} fill="rgba(255,255,255,0.45)" />
             <circle cx={cx} cy={cy + lw * 0.22} r={lw * 0.1} fill={shade(c, -0.55)} />
             <rect x={cx - lw * 0.04} y={cy + lw * 0.24} width={lw * 0.08} height={lw * 0.18} fill={shade(c, -0.55)} />
+          </g>
+        )
+      })}
+    </g>
+  )
+}
+
+/**
+ * A red carpet over a row of trucks with a roll at one end. Each sorted truck rolls it back by one
+ * truck; the cloth shrinks towards the far end with a short transition.
+ */
+function Carpets({ state, spots }: { state: LoopState; spots: TruckSpot[] }) {
+  const rolled = state.rolled ?? 0
+  const ids = [...new Set(state.trucks.map((t) => t.carpet).filter((c): c is number => c !== undefined))]
+  return (
+    <g aria-hidden pointerEvents="none">
+      {ids.map((id) => {
+        const members = state.trucks.map((t, i) => ({ t, s: spots[i] })).filter(({ t }) => t.carpet === id).sort((a, b) => (a.t.carpetAt ?? 0) - (b.t.carpetAt ?? 0))
+        const box = (list: typeof members) => {
+          const x = Math.min(...list.map(({ s }) => s.x)) - 3
+          const y = Math.min(...list.map(({ s }) => s.y)) - 3
+          return { x, y, w: Math.max(...list.map(({ s }) => s.x + s.w)) + 3 - x, h: Math.max(...list.map(({ s }) => s.y + s.h)) + 5 - y }
+        }
+        const full = box(members)
+        const covered = members.filter(({ t }) => (t.carpetAt ?? 0) >= rolled)
+        const horizontal = Math.abs(members[members.length - 1].s.x - members[0].s.x) >= Math.abs(members[members.length - 1].s.y - members[0].s.y)
+        // the roll sits at the end the carpet rolls back from (carpetAt 0)
+        const fromLow = horizontal ? members[0].s.x <= members[members.length - 1].s.x : members[0].s.y <= members[members.length - 1].s.y
+        const c = covered.length ? box(covered) : null
+        const frac = c ? (horizontal ? c.w / full.w : c.h / full.h) : 0
+        const ox = horizontal ? (fromLow ? full.x + full.w : full.x) : full.x
+        const oy = horizontal ? full.y : fromLow ? full.y + full.h : full.y
+        const roll = 14
+        const rollX = horizontal ? (fromLow ? full.x + full.w * (1 - frac) - roll / 2 : full.x + full.w * frac - roll / 2) : full.x - 2
+        const rollY = horizontal ? full.y - 2 : fromLow ? full.y + full.h * (1 - frac) - roll / 2 : full.y + full.h * frac - roll / 2
+        const ease = 'transform 0.55s cubic-bezier(0.3, 0.7, 0.3, 1), opacity 0.4s'
+        return (
+          <g key={id} style={{ opacity: c ? 1 : 0, transition: 'opacity 0.5s 0.3s' }}>
+            <g style={{ transform: horizontal ? `scaleX(${frac})` : `scaleY(${frac})`, transformOrigin: `${ox}px ${oy}px`, transition: ease }}>
+              <rect x={full.x + 2} y={full.y + 6} width={full.w} height={full.h} rx={8} fill="rgba(6,4,24,0.45)" />
+              <rect x={full.x} y={full.y} width={full.w} height={full.h} rx={8} fill="#cf1f4c" stroke="#ffc94a" strokeWidth={2.5} />
+              <rect x={full.x + 5} y={full.y + 5} width={full.w - 10} height={full.h - 10} rx={5} fill="none" stroke="rgba(255,201,74,0.55)" strokeWidth={1.5} />
+              {horizontal ? (
+                <rect x={full.x} y={full.y + full.h / 2 - 1.5} width={full.w} height={3} fill="#ffc94a" opacity={0.8} />
+              ) : (
+                <rect x={full.x + full.w / 2 - 1.5} y={full.y} width={3} height={full.h} fill="#ffc94a" opacity={0.8} />
+              )}
+            </g>
+            {/* the roll */}
+            <g style={{ transform: `translate(${horizontal ? rollX : rollX}px, ${rollY}px)`, transition: ease }}>
+              {horizontal ? (
+                <>
+                  <rect x={0} y={2} width={roll} height={full.h + 4} rx={roll / 2} fill="#7e0f2c" />
+                  <rect x={1} y={0} width={roll - 2} height={full.h + 4} rx={roll / 2} fill="#e8325f" stroke="#ffc94a" strokeWidth={1.5} />
+                  <circle cx={roll / 2} cy={full.h + 1} r={roll * 0.3} fill="none" stroke="#7e0f2c" strokeWidth={1.4} />
+                </>
+              ) : (
+                <>
+                  <rect x={2} y={0} width={full.w + 4} height={roll} rx={roll / 2} fill="#7e0f2c" />
+                  <rect x={0} y={1} width={full.w + 4} height={roll - 2} rx={roll / 2} fill="#e8325f" stroke="#ffc94a" strokeWidth={1.5} />
+                  <circle cx={full.w + 1} cy={roll / 2} r={roll * 0.3} fill="none" stroke="#7e0f2c" strokeWidth={1.4} />
+                </>
+              )}
+            </g>
           </g>
         )
       })}
@@ -248,6 +315,7 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
             locked={isLocked(state, t)}
             shut={isShut(state, t)}
             tied={isTied(state, t)}
+            carpeted={isCarpeted(state, t)}
             hidden={hidden}
             shake={shakeTruck === i}
             highlight={highlightTrucks.includes(i)}
@@ -257,6 +325,7 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
         ))}
         <Ropes state={state} spots={b.trucks} />
         <Shutters state={state} spots={b.trucks} />
+        <Carpets state={state} spots={b.trucks} />
       </svg>
       {/* cubes riding the conveyor: canvas stream on top of the board */}
       <CubeStream

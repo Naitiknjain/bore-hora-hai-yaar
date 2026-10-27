@@ -78,7 +78,8 @@ describe('loop sort levels', () => {
       const counts = new Map<number, number>()
       l.trucks.forEach((t) => {
         expect(t.blocks.length).toBeLessThanOrEqual(TRUCK_CAPACITY)
-        t.blocks.forEach((b) => counts.set(b, (counts.get(b) ?? 0) + 1))
+        // a spawner's waiting groups count too
+        ;[...t.blocks, ...(t.queue ?? []).flat()].forEach((b) => counts.set(b, (counts.get(b) ?? 0) + 1))
       })
       expect([...counts.values()].every((c) => c === TRUCK_CAPACITY)).toBe(true)
       expect(counts.size).toBe(l.colors)

@@ -35,7 +35,7 @@ import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton, SlotPlusI
 const LEVELS = levelsData as LevelDef[]
 
 /** Obstacles get a short introduction card on the first level that uses them. */
-type Obstacle = 'barrier' | 'ice' | 'lock' | 'tag' | 'rope'
+type Obstacle = 'barrier' | 'ice' | 'lock' | 'tag' | 'rope' | 'carpet' | 'spawner' | 'screw'
 const OBSTACLES: Record<Obstacle, { title: string; emoji: string; text: string; has: (l: LevelDef) => boolean }> = {
   barrier: {
     title: 'Barrier',
@@ -66,6 +66,24 @@ const OBSTACLES: Record<Obstacle, { title: string; emoji: string; text: string; 
     emoji: '🪢',
     text: 'Tied trucks cannot send cubes out. Sort any one of them and the whole rope comes off.',
     has: (l) => l.trucks.some((t) => t.rope !== undefined),
+  },
+  carpet: {
+    title: 'Carpet',
+    emoji: '🧶',
+    text: 'Trucks under the carpet are out of play. Every truck you sort rolls the carpet back by one truck.',
+    has: (l) => l.trucks.some((t) => t.carpet !== undefined),
+  },
+  spawner: {
+    title: 'Spawner',
+    emoji: '📦',
+    text: 'A spawner refills itself: each time it is emptied, the next group on its hood drops in.',
+    has: (l) => l.trucks.some((t) => t.queue?.length),
+  },
+  screw: {
+    title: 'Screw',
+    emoji: '🔩',
+    text: 'A screw fastens a group to the cubes beneath it. They always leave the truck together.',
+    has: (l) => l.trucks.some((t) => t.screws?.length),
   },
 }
 const INTRO_LEVEL = Object.fromEntries(
@@ -338,6 +356,8 @@ export default function LoopSort() {
             ? 'Frozen! Fill the truck next to it to break the ice.'
             : r === 'shut'
               ? 'Locked - empty the truck with the key to open the shutter.'
+              : r === 'carpet'
+                ? 'Under the carpet - sort trucks to roll it back.'
               : r === 'tied'
                 ? 'Tied by a rope - sort one of the tied trucks to untie it.'
             : r === 'barrier'

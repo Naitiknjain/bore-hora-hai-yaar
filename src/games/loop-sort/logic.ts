@@ -41,6 +41,13 @@ export interface TruckDef {
   tag?: number
   /** rope: tied with every truck of the same rope id; none can be tapped until one of them is sorted */
   rope?: number
+  /** carpet: covered by carpet `carpet`; `carpetAt` counts from the end it rolls back from */
+  carpet?: number
+  carpetAt?: number
+  /** spawner: groups waiting to drop in, one group each time the truck is emptied */
+  queue?: number[][]
+  /** screws: seam k fastens blocks[k] to blocks[k - 1], so they always leave together */
+  screws?: number[]
 }
 
 export interface LevelDef {
@@ -74,6 +81,10 @@ export interface Truck {
   shutter?: number
   tag?: number
   rope?: number
+  carpet?: number
+  carpetAt?: number
+  queue?: number[][]
+  screws?: number[]
 }
 
 export interface LoopState {
@@ -89,6 +100,8 @@ export interface LoopState {
   keys?: number[]
   /** ropes that have come off */
   cut?: number[]
+  /** trucks sorted so far; each one rolls every carpet back by one truck */
+  rolled?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +374,9 @@ export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity' | 'styl
     ...(t.shutter !== undefined ? { shutter: t.shutter } : {}),
     ...(t.tag !== undefined ? { tag: t.tag } : {}),
     ...(t.rope !== undefined ? { rope: t.rope } : {}),
+    ...(t.carpet !== undefined ? { carpet: t.carpet, carpetAt: t.carpetAt ?? 0 } : {}),
+    ...(t.queue?.length ? { queue: t.queue.map((g) => g.slice()) } : {}),
+    ...(t.screws?.length ? { screws: t.screws.slice() } : {}),
   }))
   for (let i = level.trucks.length; i < total; i += 1) trucks.push({ blocks: [], done: false, pos: layout.truckPos[i], inactive: true })
   const belt = Array(layout.length).fill(null)
@@ -379,8 +395,10 @@ export const isFrozen = (t: Truck) => t.ice !== undefined
 export const isShut = (s: LoopState, t: Truck) => t.shutter !== undefined && !(s.keys ?? []).includes(t.shutter)
 /** tied by a rope that is still on */
 export const isTied = (s: LoopState, t: Truck) => t.rope !== undefined && !(s.cut ?? []).includes(t.rope)
-/** covered so it takes no part in play (curtain, ice or shutter) */
-const isCovered = (s: LoopState, t: Truck) => isLocked(s, t) || isFrozen(t) || isShut(s, t)
+/** still under its carpet */
+export const isCarpeted = (s: LoopState, t: Truck) => t.carpet !== undefined && (t.carpetAt ?? 0) >= (s.rolled ?? 0)
+/** covered so it takes no part in play (curtain, ice, shutter or carpet) */
+const isCovered = (s: LoopState, t: Truck) => isLocked(s, t) || isFrozen(t) || isShut(s, t) || isCarpeted(s, t)
 
 /** Top group of identical colours (what a tap would unload). */
 export function topRun(t: Truck): number[] {
@@ -391,7 +409,19 @@ export function topRun(t: Truck): number[] {
   return t.blocks.slice(k)
 }
 
-export type TapError = 'empty' | 'locked' | 'frozen' | 'shut' | 'barrier' | 'tied' | 'done' | 'belt-full' | 'invalid'
+/** What a tap sends out: the top group, plus every group screwed beneath it. */
+export function unloadRun(t: Truck): number[] {
+  if (!t.blocks.length) return []
+  let k = t.blocks.length - topRun(t).length
+  while (k > 0 && t.screws?.includes(k)) {
+    const c = t.blocks[k - 1]
+    k -= 1
+    while (k > 0 && t.blocks[k - 1] === c) k -= 1
+  }
+  return t.blocks.slice(k)
+}
+
+export type TapError = 'empty' | 'locked' | 'frozen' | 'shut' | 'carpet' | 'barrier' | 'tied' | 'done' | 'belt-full' | 'invalid'
 
 /** Why a truck cannot be tapped right now (null = it can). `belt-full` = not enough space. */
 export function canTap(s: LoopState, i: number): TapError | null {
@@ -401,10 +431,11 @@ export function canTap(s: LoopState, i: number): TapError | null {
   if (isLocked(s, t)) return 'locked'
   if (isFrozen(t)) return 'frozen'
   if (isShut(s, t)) return 'shut'
+  if (isCarpeted(s, t)) return 'carpet'
   if (!t.blocks.length) return 'empty'
   if (t.barrier) return 'barrier'
   if (isTied(s, t)) return 'tied'
-  if (topRun(t).length > freeSpace(s)) return 'belt-full'
+  if (unloadRun(t).length > freeSpace(s)) return 'belt-full'
   return null
 }
 
@@ -413,14 +444,25 @@ export function tap(s: LoopState, i: number): { state: LoopState; error: TapErro
   const err = canTap(s, i)
   if (err) return { state: s, error: err }
   const t = s.trucks[i]
-  const run = topRun(t)
+  const run = unloadRun(t)
   const left = t.blocks.slice(0, t.blocks.length - run.length)
   // emptying the truck that carries a key collects it, which opens the matching shutter
   const found = !left.length && t.key !== undefined ? t.key : undefined
   const trucks = s.trucks.map((x, k) => {
     if (k !== i) return x
-    const next = { ...x, blocks: left, outgoing: [...(x.outgoing ?? []), ...run.slice().reverse()] }
+    const next: Truck = { ...x, blocks: left, outgoing: [...(x.outgoing ?? []), ...run.slice().reverse()] }
     if (found !== undefined) delete next.key
+    if (next.screws) {
+      const screws = next.screws.filter((k) => k < left.length)
+      if (screws.length) next.screws = screws
+      else delete next.screws
+    }
+    // a spawner that has been emptied refills with its next group
+    if (!left.length && next.queue?.length) {
+      next.blocks = next.queue[0].slice()
+      if (next.queue.length > 1) next.queue = next.queue.slice(1)
+      else delete next.queue
+    }
     return next
   })
   return { state: { ...s, trucks, ...(found !== undefined ? { keys: [...(s.keys ?? []), found] } : {}) }, error: null }
@@ -440,7 +482,7 @@ export function attemptTap(s: LoopState, i: number, trigger: 'tap-exceeds-capaci
   const err = canTap(s, i)
   if (!err) return { kind: 'moved', state: tap(s, i).state }
   if (err === 'belt-full' && trigger === 'tap-exceeds-capacity') {
-    return { kind: 'out-of-space', truck: i, needed: topRun(s.trucks[i]).length, free: freeSpace(s) }
+    return { kind: 'out-of-space', truck: i, needed: unloadRun(s.trucks[i]).length, free: freeSpace(s) }
   }
   return { kind: 'refused', reason: err }
 }
@@ -468,18 +510,28 @@ export function tick(s: LoopState): TickResult {
   let trucks = s.trucks
   let completed = s.completed
   let cut = s.cut
+  let rolled = s.rolled
   trucks.forEach((t, i) => {
     const c = belt[t.pos]
     if (c === null) return
-    const state = { ...s, trucks, completed, cut }
+    const state = { ...s, trucks, completed, cut, rolled }
     if (!accepts(state, trucks[i], c)) return
     belt[t.pos] = null
     const blocks = [...trucks[i].blocks, c]
     const full = blocks.length === TRUCK_CAPACITY && blocks.every((b) => b === c)
-    trucks = trucks.map((x, k) => (k === i ? { ...x, blocks: full ? [] : blocks, done: full || x.done, doneColor: full ? c : x.doneColor } : x))
+    trucks = trucks.map((x, k) => {
+      if (k !== i) return x
+      // a sorted spawner sends its colour off and refills straight away instead of finishing
+      if (full && x.queue?.length) {
+        const { queue, ...rest } = x
+        return { ...rest, blocks: queue[0].slice(), ...(queue.length > 1 ? { queue: queue.slice(1) } : {}) }
+      }
+      return { ...x, blocks: full ? [] : blocks, done: full || x.done, doneColor: full ? c : x.doneColor }
+    })
     if (full) {
       completed = [...completed, c]
       completedNow.push(i)
+      rolled = (rolled ?? 0) + 1
       const rope = trucks[i].rope
       if (rope !== undefined && !(cut ?? []).includes(rope)) cut = [...(cut ?? []), rope]
     }
@@ -505,7 +557,7 @@ export function tick(s: LoopState): TickResult {
     emitted.push({ truck: i, pos: t.pos, color: c })
     return { ...t, outgoing: rest.length ? rest : undefined }
   })
-  return { state: { ...s, trucks, belt, completed, ...(cut ? { cut } : {}) }, absorbed, completed: completedNow, emitted }
+  return { state: { ...s, trucks, belt, completed, ...(cut ? { cut } : {}), ...(rolled ? { rolled } : {}) }, absorbed, completed: completedNow, emitted }
 }
 
 /** Runs the conveyor until nothing more can be absorbed (a full lap with no pick-ups) or it is empty. */
@@ -520,7 +572,7 @@ export function settle(s: LoopState): LoopState {
   return state
 }
 
-export const isWon = (s: LoopState) => conveyorLoad(s) === 0 && s.trucks.every((t) => t.done || t.blocks.length === 0)
+export const isWon = (s: LoopState) => conveyorLoad(s) === 0 && s.trucks.every((t) => t.done || (t.blocks.length === 0 && !t.queue?.length))
 
 /** True when blocks remain but no truck could ever be tapped (even with unlimited space). */
 export function hasNoMoves(s: LoopState): boolean {
@@ -558,7 +610,7 @@ export function addTruck(s: LoopState): LoopState {
 /** Trucks whose cube order can be shuffled (2+ cubes, not all one colour, open). */
 export function canShuffle(s: LoopState, i: number): boolean {
   const t = s.trucks[i]
-  if (!t || t.inactive || t.done || isCovered(s, t) || t.blocks.length < 2) return false
+  if (!t || t.inactive || t.done || isCovered(s, t) || t.screws?.length || t.blocks.length < 2) return false
   return new Set(t.blocks).size > 1
 }
 
@@ -591,7 +643,7 @@ export function undoTo(previous: LoopState, current: LoopState): LoopState {
 // Solvers
 // ---------------------------------------------------------------------------
 export function stateKey(s: LoopState): string {
-  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : (isFrozen(t) ? '*' : '') + t.blocks.join('') + (t.outgoing?.length ? `>${t.outgoing.join('')}` : ''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}#${(s.keys ?? []).join('')}#${(s.cut ?? []).join('')}`
+  return `${s.trucks.map((t) => (t.inactive ? 'X' : t.done ? 'D' : (isFrozen(t) ? '*' : '') + t.blocks.join('') + (t.outgoing?.length ? `>${t.outgoing.join('')}` : '') + (t.queue?.length ? `q${t.queue.length}` : '') + (t.screws?.length ? `s${t.screws.join('')}` : ''))).join('|')}#${s.belt.map((b) => (b === null ? '.' : b)).join('')}#${s.capacity}#${(s.keys ?? []).join('')}#${(s.cut ?? []).join('')}#${s.rolled ?? 0}`
 }
 
 /**
@@ -653,7 +705,7 @@ export function solveDepthFirst(level: Pick<LevelDef, 'trucks' | 'capacity'>, ma
     const order = node.s.trucks
       .map((_, i) => i)
       .filter((i) => canTap(node.s, i) === null)
-      .sort((a, b) => topRun(node.s.trucks[a]).length - topRun(node.s.trucks[b]).length)
+      .sort((a, b) => unloadRun(node.s.trucks[a]).length - unloadRun(node.s.trucks[b]).length)
     for (const i of order) stack.push({ s: settle(tap(node.s, i).state), parent: node, move: i })
   }
   return null
@@ -667,6 +719,7 @@ export function disorder(s: LoopState): number {
     let base = 1
     while (base < t.blocks.length && t.blocks[base] === t.blocks[0]) base += 1
     h += t.blocks.length - base
+    for (const g of t.queue ?? []) h += g.length
   }
   return h
 }
@@ -778,10 +831,13 @@ export function levelParams(n: number) {
   const lock = n >= 33 && n % 4 === 1
   const tag = n >= 39 && n % 4 === 3
   const rope = n >= 43 && n % 5 === 3
+  const carpet = n >= 47 && n % 5 === 2
+  const spawner = n >= 49 && n % 5 === 4
+  const screw = n >= 50 && n % 5 === 0
   // layouts in the reference's order: rows first, stacked sideways trucks from level 3, the C-shaped
   // tunnel track from level 7, then a mix
   const style: LayoutStyle = n <= 2 ? 'rows' : n <= 6 ? 'stack' : (['tunnel', 'rows', 'stack'] as const)[(n - 7) % 3]
-  return { colors, empties, capacity, hidden, curtain, barrier, ice, lock, tag, rope, style }
+  return { colors, empties, capacity, hidden, curtain, barrier, ice, lock, tag, rope, carpet, spawner, screw, style }
 }
 
 /** Level 1 is a one-tap tutorial: one colour split over two trucks. */
@@ -829,7 +885,8 @@ function placeObstacles(trucks: TruckDef[], p: ReturnType<typeof levelParams>, r
     out[i].ice = k
   }
   const layout = () => boardLayout(Math.min(MAX_TRUCKS, out.length + SPARE_DOCKS), p.style, Math.min(SPARE_DOCKS, MAX_TRUCKS - out.length))
-  const plain = (t: TruckDef) => !t.barrier && t.ice === undefined && t.lock === undefined && t.shutter === undefined && t.rope === undefined && t.tag === undefined
+  const plain = (t: TruckDef) =>
+    !t.barrier && t.ice === undefined && t.lock === undefined && t.shutter === undefined && t.rope === undefined && t.tag === undefined && t.key === undefined && t.carpet === undefined && !t.queue && !t.screws
   /** runs of `len` trucks standing side by side in one row */
   const runs = (len: number, ok: (i: number) => boolean) => {
     const b = layout()
@@ -867,6 +924,43 @@ function placeObstacles(trucks: TruckDef[], p: ReturnType<typeof levelParams>, r
     const options = runs(2 + Math.floor(rand() * 3), (i) => plain(out[i]) && out[i].key === undefined).filter((run) => run.some((i) => new Set(out[i].blocks).size <= 1))
     if (!options.length) return null
     for (const i of pick(options)) out[i].rope = 0
+  }
+  if (p.spawner) {
+    // a spawner holds 2 more groups (1-2 cubes each), taken from the tops of other trucks
+    const spawners = out.map((t, i) => (t.blocks.length && plain(t) ? i : -1)).filter((i) => i >= 0)
+    if (!spawners.length) return null
+    const sp = pick(spawners)
+    const queue: number[][] = []
+    for (let g = 0; g < 2; g += 1) {
+      const donors = out.map((t, i) => (i !== sp && t.blocks.length >= 2 && plain(t) ? i : -1)).filter((i) => i >= 0)
+      if (!donors.length) return null
+      const d = out[pick(donors)].blocks
+      const group = [d.pop()!]
+      if (d.length >= 2 && d[d.length - 1] === group[0] && rand() < 0.7) group.push(d.pop()!)
+      queue.push(group)
+    }
+    out[sp].queue = queue
+  }
+  if (p.screw) {
+    // one screw fastens the top group of a truck to the different colour beneath it
+    const options: [number, number][] = []
+    out.forEach((t, i) => {
+      if (!plain(t) || t.blocks.length < 2) return
+      const top = t.blocks.length - topRun({ blocks: t.blocks, done: false, pos: 0 }).length
+      if (top > 0) options.push([i, top])
+    })
+    if (!options.length) return null
+    const [i, seam] = pick(options)
+    out[i].screws = [seam]
+  }
+  if (p.carpet) {
+    // a carpet over 2-3 trucks side by side; every sorted truck rolls it back by one
+    const options = runs(rand() < 0.5 ? 2 : 3, (i) => plain(out[i]))
+    if (!options.length) return null
+    pick(options).forEach((i, k) => {
+      out[i].carpet = 0
+      out[i].carpetAt = k
+    })
   }
   return out
 }

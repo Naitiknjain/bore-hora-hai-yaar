@@ -386,3 +386,47 @@ describe('obstacles', () => {
     }
   })
 })
+
+describe('obstacles 3', () => {
+  it('carpet: covered trucks are out of play; every sorted truck rolls it back by one', () => {
+    const def: LevelDef = { ...lvl([], 8), trucks: [{ blocks: [1, 1, 1] }, { blocks: [1] }, { blocks: [2, 2], carpet: 0, carpetAt: 0 }, { blocks: [3], carpet: 0, carpetAt: 1 }] }
+    let s = initialState(def)
+    expect(tap(s, 2).error).toBe('carpet')
+    s = settle(tap(s, 1).state) // the 1 completes truck 0
+    expect(s.rolled).toBe(1)
+    expect(tap(s, 2).error).toBeNull() // first truck uncovered
+    expect(tap(s, 3).error).toBe('carpet') // the next one is still under it
+  })
+
+  it('spawner: refills with its next group each time it is emptied, and must be used up to win', () => {
+    const def: LevelDef = { ...lvl([], 8), trucks: [{ blocks: [2], queue: [[3, 3], [2]] }, { blocks: [] }, { blocks: [] }] }
+    let s = initialState(def)
+    s = settle(tap(s, 0).state)
+    expect(s.trucks[0].blocks).toEqual([3, 3])
+    expect(s.trucks[0].queue).toEqual([[2]])
+    expect(isWon(s)).toBe(false)
+    s = settle(tap(s, 0).state)
+    expect(s.trucks[0].blocks).toEqual([2])
+    expect(s.trucks[0].queue).toBeUndefined()
+  })
+
+  it('screw: the screwed group leaves together with the top group', () => {
+    const def: LevelDef = { ...lvl([], 8), trucks: [{ blocks: [1, 2, 3, 3], screws: [2] }, { blocks: [] }, { blocks: [] }] }
+    const s = tap(initialState(def), 0).state
+    expect(s.trucks[0].blocks).toEqual([1])
+    expect(s.trucks[0].outgoing).toEqual([3, 3, 2])
+    expect(s.trucks[0].screws).toBeUndefined()
+  })
+
+  it('a screwed group that does not fit is Out of Space', () => {
+    const def: LevelDef = { ...lvl([], 2), trucks: [{ blocks: [1, 2, 2, 3], screws: [3] }, { blocks: [] }] }
+    expect(tap(initialState(def), 0).error).toBe('belt-full')
+  })
+
+  it('levels with carpets, spawners and screws are winnable as stored', () => {
+    const has = (f: (t: LevelDef['trucks'][number]) => boolean) => LEVELS.filter((l) => l.trucks.some(f))
+    const groups = [has((t) => t.carpet !== undefined), has((t) => !!t.queue?.length), has((t) => !!t.screws?.length)]
+    for (const g of groups) expect(g.length).toBeGreaterThan(1)
+    for (const l of groups.flat()) expect(replay(l, l.solution), `level ${l.n}`).toBe(true)
+  })
+})

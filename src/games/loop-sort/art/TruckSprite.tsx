@@ -62,6 +62,10 @@ interface Props {
   tint?: number
   /** carries the key with this id (drawn on the hood) */
   keyId?: number
+  /** spawner: groups still waiting to drop in (shown as chips on the hood) */
+  queue?: number[][]
+  /** screws fastening blocks[k] to blocks[k - 1] */
+  screws?: number[]
 }
 
 /**
@@ -89,7 +93,7 @@ export function TruckSprite(props: Props) {
   )
 }
 
-function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, barrier, frozen, thawed, tint, keyId, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
+function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, barrier, frozen, thawed, tint, keyId, queue, screws, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
   // a coloured truck is painted in its colour; every other truck is lavender
   const paint = tint === undefined ? null : BLOCK_COLORS[tint]
   const up = facing === 'up'
@@ -161,6 +165,26 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
           // in front of the truck when there is room; sideways trucks sit close to the belt, so on the hood
           <Bollard key={side} cx={bodyX + bodyW / 2 + side * bodyW * 0.2} cy={turn ? hoodY + hoodH / 2 : up ? y - 9 : y + h + 5} r={Math.max(5, w * 0.085)} down={done} />
         ))}
+      {!done &&
+        screws?.map((k) => (
+          <Screw key={k} cx={bedX + bedW / 2} cy={up ? bedY1 - k * slotH : bedY0 + k * slotH} r={Math.max(5.5, Math.min(bedW, slotH) * 0.27)} />
+        ))}
+      {queue?.map((g, k) => {
+        // waiting groups, nearest first, kept upright even on sideways trucks
+        const n = queue.length
+        const size = Math.min(Math.max(hoodH * 1.25, 13), (bodyW - wall) / Math.max(2, n) - 3)
+        const cx = bodyX + bodyW / 2 + (k - (n - 1) / 2) * (size + 4)
+        const cy = hoodY + hoodH / 2
+        return (
+          <g key={k} transform={turn ? `rotate(${-turn} ${cx} ${cy})` : undefined} aria-hidden>
+            <rect x={cx - size / 2} y={cy - size / 2 + 1.5} width={size} height={size} rx={size * 0.22} fill="rgba(6,4,24,0.45)" />
+            <rect x={cx - size / 2} y={cy - size / 2} width={size} height={size} rx={size * 0.22} fill={BLOCK_COLORS[g[g.length - 1]]} stroke="#ffffff" strokeWidth={1.2} />
+            <text x={cx} y={cy + size * 0.2} textAnchor="middle" fontSize={size * 0.6} fontWeight={900} fill="#ffffff" stroke="rgba(20,10,60,0.6)" strokeWidth={1.6} paintOrder="stroke" fontFamily="'Baloo 2', system-ui">
+              {g.length}
+            </text>
+          </g>
+        )
+      })}
       {keyId !== undefined && <KeyIcon cx={bodyX + bodyW / 2} cy={hoodY + hoodH / 2} s={Math.min(bodyW * 0.62, hoodH * 1.5)} color={KEY_COLORS[keyId % KEY_COLORS.length]} />}
       {frozen && <Ice x={bodyX} y={y} w={bodyW} h={topH + depth} r={r} />}
       {thawed && <IceShards cx={bodyX + bodyW / 2} cy={y + topH / 2} spread={Math.max(bodyW, topH * 0.5)} />}
@@ -185,6 +209,18 @@ function Bollard({ cx, cy, r, down }: { cx: number; cy: number; r: number; down:
           <circle cx={cx - r * 0.12} cy={cy - 2.3} r={r * 0.12} fill="#fff6c8" />
         </>
       )}
+    </g>
+  )
+}
+
+/** A silver screw head pinning two groups together. */
+function Screw({ cx, cy, r }: { cx: number; cy: number; r: number }) {
+  return (
+    <g aria-hidden>
+      <circle cx={cx} cy={cy + 1.2} r={r} fill="rgba(6,4,24,0.5)" />
+      <circle cx={cx} cy={cy} r={r} fill="#d9dde8" stroke="#6b7086" strokeWidth={1.2} />
+      <circle cx={cx - r * 0.25} cy={cy - r * 0.3} r={r * 0.35} fill="rgba(255,255,255,0.7)" />
+      <path d={`M ${cx - r * 0.55} ${cy} L ${cx + r * 0.55} ${cy} M ${cx} ${cy - r * 0.55} L ${cx} ${cy + r * 0.55}`} stroke="#555a70" strokeWidth={Math.max(1.2, r * 0.28)} strokeLinecap="round" />
     </g>
   )
 }
