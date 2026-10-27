@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import levels from '../../src/games/loop-sort/levels.json'
 import { CHAKKAR_CONFIG, continuesLeft, usesLeft, type ChakkarConfig } from '../../src/games/loop-sort/config'
 import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, applyAbility, type Attempt } from '../../src/games/loop-sort/attempt'
-import { attemptTap, beltCount, beltLayout, boardLayout, conveyorLoad, freeSpace, initialState, maxCapacity, MAX_TRUCKS, replay, settle, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
+import { attemptTap, beltCount, beltLayout, boardLayout, conveyorLoad, freeSpace, initialState, maxCapacity, MAX_TRUCKS, replay, settle, SPARE_DOCKS, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
 
 const LEVELS = levels as LevelDef[]
 const lvl = (trucks: number[][], capacity: number, n = 1): LevelDef => ({ n, colors: 4, capacity, hidden: false, trucks: trucks.map((blocks) => ({ blocks })), solution: [] })
@@ -255,5 +255,36 @@ describe('levels', () => {
       expect(replay(l, l.solution)).toBe(true)
     }
     expect(Math.max(...LEVELS.map((l) => l.colors))).toBe(8)
+  })
+})
+
+describe('layouts', () => {
+  it('every level is winnable on exactly the board a Normal Mode attempt starts with', () => {
+    for (const l of LEVELS) {
+      const a = startAttempt(l, false)
+      expect(a.state).toEqual(initialState(l, SPARE_DOCKS))
+      expect(replay(l, l.solution), `level ${l.n}`).toBe(true)
+    }
+  })
+
+  it('spare docks never move the real trucks in the rows layout', () => {
+    for (let k = 1; k <= 8; k += 1) {
+      const plain = boardLayout(k, 'rows').trucks.map((t) => t.pos)
+      const withSpares = boardLayout(k + SPARE_DOCKS, 'rows', SPARE_DOCKS).trucks.map((t) => t.pos)
+      expect(withSpares.slice(0, k)).toEqual(plain)
+    }
+  })
+
+  it('uses all three layouts, and no truck loads inside the tunnel', () => {
+    expect(new Set(LEVELS.map((l) => l.style))).toEqual(new Set(['rows', 'stack', 'tunnel']))
+    for (const l of LEVELS.filter((x) => x.style === 'tunnel')) {
+      const b = boardLayout(l.trucks.length + SPARE_DOCKS, 'tunnel', SPARE_DOCKS)
+      const t = b.tunnel!
+      for (const spot of b.trucks) {
+        const [x, y] = b.points[spot.pos]
+        // every loading point is clearly outside the tunnel and its end caps
+        expect(x < t.x + t.w + 12 && y >= t.y && y <= t.y + t.h, `level ${l.n}`).toBe(false)
+      }
+    }
   })
 })

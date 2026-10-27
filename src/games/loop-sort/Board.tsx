@@ -98,7 +98,15 @@ const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked
 })
 
 /** Static board art (defs + raised track). Never changes during a level. */
-const BoardBase = memo(function BoardBase({ loop, points }: { loop: { x: number; y: number; w: number; h: number; r: number }; points: [number, number][] }) {
+const BoardBase = memo(function BoardBase({
+  loop,
+  points,
+  tunnel,
+}: {
+  loop: { x: number; y: number; w: number; h: number; r: number }
+  points: [number, number][]
+  tunnel?: { x: number; y: number; w: number; h: number }
+}) {
   return (
     <>
       <ArtDefs />
@@ -106,14 +114,14 @@ const BoardBase = memo(function BoardBase({ loop, points }: { loop: { x: number;
         <BlockGradients />
         <TruckGradients />
       </defs>
-      <Track x={loop.x} y={loop.y} w={loop.w} h={loop.h} radius={loop.r} points={points} />
+      <Track x={loop.x} y={loop.y} w={loop.w} h={loop.h} radius={loop.r} points={points} tunnel={tunnel} />
     </>
   )
 })
 
 export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightTrucks, justAdded, onTruck }: Props) {
   // geometry depends only on the number of docks (cached), so static layers never re-render
-  const b = useMemo(() => boardLayout(state.trucks.length), [state.trucks.length])
+  const b = useMemo(() => boardLayout(state.trucks.length, state.style, state.spares), [state.trucks.length, state.style, state.spares])
   const svgRef = useRef<SVGSVGElement>(null)
   const { prefersReducedMotion } = useSettings()
   // stable handler so memoised trucks are not re-rendered just because the parent did
@@ -130,7 +138,7 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
         role="group"
         aria-label="Chakkar Cubes board"
       >
-        <BoardBase loop={b.loop} points={b.points} />
+        <BoardBase loop={b.loop} points={b.points} tunnel={b.tunnel} />
         {state.trucks.map((t, i) => (
           <TruckButton
             key={i}
@@ -153,6 +161,7 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
         height={b.height}
         points={b.points}
         trucks={b.trucks}
+        tunnel={b.tunnel}
         items={items}
         tickMs={tickMs}
         reducedMotion={prefersReducedMotion}

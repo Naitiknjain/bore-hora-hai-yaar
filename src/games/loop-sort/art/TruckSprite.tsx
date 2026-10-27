@@ -36,7 +36,7 @@ interface Props {
   w: number
   h: number
   /** Open (loading) end points towards the belt. */
-  facing: 'up' | 'down'
+  facing: 'up' | 'down' | 'left' | 'right'
   blocks: number[]
   hidden: boolean
   done: boolean
@@ -51,7 +51,26 @@ interface Props {
  * thickness below it, a flat hood at the end facing the belt and a recessed cargo bed holding up to
  * 4 cubes. Neighbouring same-colour cubes are drawn as one long block.
  */
-export function TruckSprite({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1 }: Props) {
+export function TruckSprite(props: Props) {
+  const { x, y, w, h, facing } = props
+  if (facing === 'up' || facing === 'down') return <UprightTruck {...props} facing={facing} />
+  // sideways truck: the upright drawing turned a quarter, with its wheels peeking out below
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const wheelW = Math.max(10, w * 0.12)
+  return (
+    <g>
+      {[0.24, 0.72].map((f) => (
+        <rect key={f} x={x + w * f} y={y + h - 6} width={wheelW} height={10} rx={4} fill="#141026" stroke="#2c2645" strokeWidth={1} />
+      ))}
+      <g transform={`rotate(${facing === 'right' ? 90 : -90} ${cx} ${cy})`}>
+        <UprightTruck {...props} x={cx - h / 2} y={cy - w / 2} w={h} h={w} facing="up" />
+      </g>
+    </g>
+  )
+}
+
+function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1 }: Props & { facing: 'up' | 'down' }) {
   const up = facing === 'up'
   const bodyX = x + w * 0.05
   const bodyW = w * 0.9

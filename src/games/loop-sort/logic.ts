@@ -20,6 +20,11 @@
 
 export const TRUCK_CAPACITY = 4
 export const MAX_TRUCKS = 12
+/**
+ * Empty docks a Normal Mode level reserves for the Extra Truck ability. Levels are solved on exactly
+ * this board, so what the player gets is the board the solver proved winnable.
+ */
+export const SPARE_DOCKS = 2
 
 export interface TruckDef {
   blocks: number[]
@@ -28,6 +33,8 @@ export interface TruckDef {
 
 export interface LevelDef {
   n: number
+  /** Board layout; older levels without one use 'rows'. */
+  style?: LayoutStyle
   colors: number
   capacity: number // conveyor capacity in cubes
   hidden: boolean
@@ -49,6 +56,10 @@ export interface Truck {
 }
 
 export interface LoopState {
+  /** board layout the positions belong to (defaults to 'rows') */
+  style?: LayoutStyle
+  /** how many of the last docks are spares for Extra Truck (they keep their own place on the board) */
+  spares?: number
   trucks: Truck[]
   belt: (number | null)[] // one slot per conveyor position
   capacity: number
@@ -63,8 +74,16 @@ export interface LoopState {
 // Conveyor positions are spaced evenly along the whole loop (constant speed, no jumps) and
 // every truck sits exactly on one position, so a passing cube is always offered to it.
 // ---------------------------------------------------------------------------
-export type Facing = 'up' | 'down'
-export type RowId = 'inner-top' | 'inner-bottom' | 'outer-top' | 'outer-bottom'
+export type Facing = 'up' | 'down' | 'left' | 'right'
+export type RowId = 'inner-top' | 'inner-bottom' | 'outer-top' | 'outer-bottom' | 'inner-stack'
+/**
+ * Board layouts seen in the reference:
+ *  - rows:   upright trucks in rows inside and around a rounded square loop (its first levels)
+ *  - stack:  sideways trucks stacked inside the loop, facing the right-hand belt, with upright
+ *            trucks above and below the loop facing it
+ *  - tunnel: like stack, but the left side of the loop runs through a hidden tunnel (a C-shaped track)
+ */
+export type LayoutStyle = 'rows' | 'stack' | 'tunnel'
 
 export interface TruckSpot {
   x: number
@@ -85,6 +104,8 @@ export interface BoardLayout {
   step: number
   points: [number, number][]
   trucks: TruckSpot[]
+  /** Area hidden by the tunnel (cubes inside it are not drawn), if this layout has one. */
+  tunnel?: { x: number; y: number; w: number; h: number }
 }
 
 export interface BeltLayout {
@@ -129,13 +150,99 @@ function pointOnLoop(x: number, y: number, w: number, h: number, r: number, s: n
   return corner(x + r, y + r, Math.PI, d)
 }
 
-const layoutCache = new Map<number, BoardLayout>()
+const layoutCache = new Map<string, BoardLayout>()
 
-/** Full board geometry for `truckCount` docks (shared by the rules and the renderer). */
-export function boardLayout(truckCount: number): BoardLayout {
+/** Full board geometry for `truckCount` docks in a layout style (shared by the rules and the renderer). */
+export function boardLayout(truckCount: number, style: LayoutStyle = 'rows', spares = 0): BoardLayout {
   const k = Math.max(1, Math.min(MAX_TRUCKS, truckCount))
-  const cached = layoutCache.get(k)
+  const sp = Math.max(0, Math.min(spares, k - 1))
+  const id = `${style}:${k}:${sp}`
+  const cached = layoutCache.get(id)
   if (cached) return cached
+  const result = style === 'rows' ? rowsLayout(k, sp) : stackLayout(k, style === 'tunnel')
+  layoutCache.set(id, result)
+  return result
+}
+
+/** Evenly spaced belt positions around a rounded rectangle (constant speed, no jumps). */
+function loopPoints(loop: { x: number; y: number; w: number; h: number; r: number }) {
+  const per = 2 * (loop.w - 2 * loop.r) + 2 * (loop.h - 2 * loop.r) + 2 * Math.PI * loop.r
+  const n = Math.round(per / STEP)
+  const step = per / n
+  const points: [number, number][] = Array.from({ length: n }, (_, i) => pointOnLoop(loop.x, loop.y, loop.w, loop.h, loop.r, i * step))
+  return { points, step }
+}
+
+/** Picks the free belt position closest to a truck's open end. */
+function positionPicker(points: [number, number][], isFree: (i: number) => boolean = () => true) {
+  const used = new Set<number>()
+  return (x: number, y: number) => {
+    let best = -1
+    let bestD = Infinity
+    points.forEach(([px, py], i) => {
+      if (used.has(i) || !isFree(i)) return
+      const d = (px - x) ** 2 + (py - y) ** 2
+      if (d < bestD) {
+        bestD = d
+        best = i
+      }
+    })
+    used.add(best)
+    return best
+  }
+}
+
+/**
+ * Stack layout: up to 4 sideways trucks stacked inside the loop with their open end at the right
+ * belt, then upright trucks above the loop (facing down) and below it (facing up), up to 4 each.
+ */
+function stackLayout(k: number, tunnel: boolean): BoardLayout {
+  const inner = Math.min(4, k)
+  const above = Math.min(4, Math.ceil((k - inner) / 2))
+  const below = Math.min(4, k - inner - above)
+  const innerW = LOOP_W - 2 * RIM_HALF - 2 * 12
+  // sideways trucks: long side across the loop
+  const sw = Math.min(200, innerW)
+  const sh = Math.round(sw / 2.05)
+  const outerCount = Math.max(above, below)
+  const ow = outerCount ? Math.min(78, Math.floor((LOOP_W - (outerCount - 1) * GAP) / outerCount)) : 0
+  const oh = Math.round(ow * 2.05)
+  const loopY = 30 + (above ? oh + 22 : 0)
+  const loopH = Math.max(300, inner * sh + (inner - 1) * GAP + 2 * (RIM_HALF + PAD))
+  const height = loopY + loopH + 40 + (below ? oh + 22 : 0)
+  const loop = { x: LOOP_X, y: loopY, w: LOOP_W, h: loopH, r: LOOP_R }
+  const { points, step } = loopPoints(loop)
+  // the tunnel swallows the whole left side (corners included): the top and bottom straights end in caps
+  const tunnelRect = tunnel ? { x: 0, y: loopY - RIM_HALF - 4, w: LOOP_X + LOOP_R, h: loopH + 2 * RIM_HALF + 8 } : undefined
+  const inTunnel = (i: number) =>
+    // (half a step of margin keeps loading points clear of the end caps)
+    !!tunnelRect && points[i][0] < tunnelRect.x + tunnelRect.w + STEP / 2 && points[i][1] > tunnelRect.y && points[i][1] < tunnelRect.y + tunnelRect.h
+  // no truck may load or unload inside the tunnel, where nobody could see it
+  const pick = positionPicker(points, (i) => !inTunnel(i))
+  const trucks: TruckSpot[] = []
+  const stackH = inner * sh + (inner - 1) * GAP
+  const stackY = loopY + loopH / 2 - stackH / 2
+  // the stack hugs the right side, its open end right next to the belt
+  const stackX = LOOP_X + LOOP_W - RIM_HALF - 10 - sw
+  for (let j = 0; j < inner; j += 1) {
+    const y = stackY + j * (sh + GAP)
+    trucks.push({ x: stackX, y, w: sw, h: sh, facing: 'right', row: 'inner-stack', pos: pick(LOOP_X + LOOP_W, y + sh / 2) })
+  }
+  const rowXs = (count: number) => {
+    const total = count * ow + (count - 1) * GAP
+    const start = LOOP_X + LOOP_W / 2 - total / 2
+    return Array.from({ length: count }, (_, j) => start + j * (ow + GAP))
+  }
+  for (const x of rowXs(above)) trucks.push({ x, y: loopY - RIM_HALF - 8 - oh, w: ow, h: oh, facing: 'down', row: 'outer-top', pos: pick(x + ow / 2, loopY) })
+  for (const x of rowXs(below)) trucks.push({ x, y: loopY + loopH + RIM_HALF + 8, w: ow, h: oh, facing: 'up', row: 'outer-bottom', pos: pick(x + ow / 2, loopY + loopH) })
+  return { width: BOARD_WIDTH, height, loop, step, points, trucks, tunnel: tunnelRect }
+}
+
+function rowsLayout(total: number, spares: number): BoardLayout {
+  // spare docks (up to 4) get their own row below the loop, like the reference's extra truck, so the
+  // real trucks keep exactly the places (and belt positions) they have without them
+  const spareRow = Math.min(4, spares, Math.max(0, total - 1))
+  const k = total - spareRow
   // one row up to 4 trucks; beyond that split evenly over two rows so trucks stay large
   const innerTop = k <= 4 ? k : Math.ceil(Math.min(k, 8) / 2)
   const innerBottom = Math.min(4, k - innerTop)
@@ -150,7 +257,7 @@ export function boardLayout(truckCount: number): BoardLayout {
   const loopY = 30 + (outerTop ? outerH : 0)
   // portrait like the reference: a single row still gets a tall loop
   const loopH = innerBottom ? 2 * th + 2 * (RIM_HALF + PAD) + 34 : Math.max(310, th + 2 * (RIM_HALF + PAD) + 40)
-  const height = loopY + loopH + 40 + (outerBottom ? outerH : 0)
+  const height = loopY + loopH + 40 + (outerBottom || spareRow ? outerH : 0)
   const loop = { x: LOOP_X, y: loopY, w: LOOP_W, h: loopH, r: LOOP_R }
 
   const per = 2 * (LOOP_W - 2 * LOOP_R) + 2 * (loopH - 2 * LOOP_R) + 2 * Math.PI * LOOP_R
@@ -195,14 +302,15 @@ export function boardLayout(truckCount: number): BoardLayout {
   }
   outer(outerTop, loopY, 'down', 'outer-top', loopY - RIM_HALF - 8 - th)
   outer(outerBottom, loopY + loopH, 'up', 'outer-bottom', loopY + loopH + RIM_HALF + 8)
+  // spare docks below the loop, facing it (only when the real trucks leave that row free)
+  const spareXs = rowXs(spareRow)
+  for (const x of spareXs) trucks.push({ x, y: loopY + loopH + RIM_HALF + 8, w: tw, h: th, facing: 'up', row: 'outer-bottom', pos: nearest(x + tw / 2, loopY + loopH) })
 
-  const result = { width: BOARD_WIDTH, height, loop, step, points, trucks }
-  layoutCache.set(k, result)
-  return result
+  return { width: BOARD_WIDTH, height, loop, step, points, trucks }
 }
 
-export function beltLayout(truckCount: number): BeltLayout {
-  const b = boardLayout(truckCount)
+export function beltLayout(truckCount: number, style: LayoutStyle = 'rows', spares = 0): BeltLayout {
+  const b = boardLayout(truckCount, style, spares)
   return { length: b.points.length, truckPos: b.trucks.map((t) => t.pos) }
 }
 
@@ -213,14 +321,14 @@ export const maxCapacity = (s: LoopState) => s.belt.length - 2
  * Builds the starting board. `spareDocks` reserves empty, inactive docks for the Extra Truck
  * ability (they are laid out now so adding a truck never moves the conveyor).
  */
-export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity'>, spareDocks = 0): LoopState {
+export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity' | 'style'>, spareDocks = 0): LoopState {
   const spare = Math.max(0, Math.min(spareDocks, MAX_TRUCKS - level.trucks.length))
   const total = level.trucks.length + spare
-  const layout = beltLayout(total)
+  const layout = beltLayout(total, level.style, spare)
   const trucks: Truck[] = level.trucks.map((t, i) => ({ blocks: t.blocks.slice(), lock: t.lock, done: false, pos: layout.truckPos[i] }))
   for (let i = level.trucks.length; i < total; i += 1) trucks.push({ blocks: [], done: false, pos: layout.truckPos[i], inactive: true })
   const belt = Array(layout.length).fill(null)
-  return { trucks, belt, capacity: Math.min(level.capacity, belt.length - 2), completed: [] }
+  return { style: level.style, spares: spare, trucks, belt, capacity: Math.min(level.capacity, belt.length - 2), completed: [] }
 }
 
 export const beltCount = (s: LoopState) => s.belt.reduce((n: number, b) => (b === null ? n : n + 1), 0)
@@ -565,8 +673,8 @@ export function solveBestFirst(level: Pick<LevelDef, 'trucks' | 'capacity'>, max
 }
 
 /** Replays a solution and reports whether it wins (used by tests and the generator). */
-export function replay(level: Pick<LevelDef, 'trucks' | 'capacity'>, taps: number[]): boolean {
-  let s = initialState(level)
+export function replay(level: Pick<LevelDef, 'trucks' | 'capacity' | 'style'>, taps: number[], spareDocks = SPARE_DOCKS): boolean {
+  let s = initialState(level, spareDocks)
   for (const i of taps) {
     const r = tap(s, i)
     if (r.error) return false
@@ -597,10 +705,20 @@ export function levelParams(n: number) {
   const capacity = n <= 6 ? 8 : n <= 20 ? 7 : n <= 40 ? 6 : 5
   const hidden = n >= 6
   const curtain = n >= 18 && n % 3 === 0
-  return { colors, empties, capacity, hidden, curtain }
+  // layouts in the reference's order: rows first, stacked sideways trucks from level 3, the C-shaped
+  // tunnel track from level 7, then a mix
+  const style: LayoutStyle = n <= 2 ? 'rows' : n <= 6 ? 'stack' : (['tunnel', 'rows', 'stack'] as const)[(n - 7) % 3]
+  return { colors, empties, capacity, hidden, curtain, style }
+}
+
+/** Level 1 is a one-tap tutorial: one colour split over two trucks. */
+function tutorialLevel(): LevelDef {
+  const def = { style: 'rows' as const, trucks: [{ blocks: [0, 0, 0] }, { blocks: [0] }], capacity: 7 }
+  return { n: 1, colors: 1, hidden: false, ...def, solution: solveLevel(def, 80000, initialState(def, SPARE_DOCKS)) ?? [] }
 }
 
 export function generateLevel(n: number): LevelDef {
+  if (n === 1) return tutorialLevel()
   const p = levelParams(n)
   for (let attempt = 0; attempt < 600; attempt += 1) {
     const rand = rng32(n * 2654435761 + attempt * 97 + 1)
@@ -622,14 +740,16 @@ export function generateLevel(n: number): LevelDef {
       const lockColor = Math.floor(rand() * p.colors)
       if (!trucks[idx].blocks.includes(lockColor)) trucks[idx] = { ...trucks[idx], lock: lockColor }
     }
-    const def = { trucks, capacity: p.capacity }
-    const any = solveBestFirst(def) ?? solveDepthFirst(def)
+    const def = { trucks, capacity: p.capacity, style: p.style }
+    // solve the exact board a Normal Mode player gets (with its spare Extra Truck docks)
+    const board = initialState(def, SPARE_DOCKS)
+    const any = solveBestFirst(def, 60000, board) ?? solveDepthFirst(def, 60000, board)
     if (!any) continue
     // shortest solution when the search space is small enough; otherwise the level is hard anyway
-    const shortest = solveLevel(def, 15000)
+    const shortest = solveLevel(def, 15000, board)
     const minTaps = Math.min(3 + n / 6, 10)
     if (shortest && shortest.length < minTaps) continue
-    return { n, colors: p.colors, capacity: p.capacity, hidden: p.hidden, trucks, solution: shortest ?? any }
+    return { n, style: p.style, colors: p.colors, capacity: p.capacity, hidden: p.hidden, trucks, solution: shortest ?? any }
   }
   throw new Error(`Could not generate level ${n}`)
 }

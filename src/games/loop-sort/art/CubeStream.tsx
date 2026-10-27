@@ -23,6 +23,8 @@ interface Props {
   height: number
   points: [number, number][]
   trucks: TruckSpot[]
+  /** cubes inside this area are in the tunnel and not drawn */
+  tunnel?: { x: number; y: number; w: number; h: number }
   items: StreamItem[]
   tickMs: number
   reducedMotion: boolean
@@ -92,8 +94,18 @@ function drawCube(ctx: CanvasRenderingContext2D, x: number, y: number, s: number
 
 /** Point just inside a truck's open end (the end facing the belt); `depth` 0 = edge, 1 = far end. */
 function mouthOf(spot: TruckSpot, depth: number): [number, number] {
-  const x = spot.x + spot.w / 2
-  return [x, spot.facing === 'up' ? spot.y + spot.h * depth : spot.y + spot.h * (1 - depth)]
+  const cx = spot.x + spot.w / 2
+  const cy = spot.y + spot.h / 2
+  switch (spot.facing) {
+    case 'up':
+      return [cx, spot.y + spot.h * depth]
+    case 'down':
+      return [cx, spot.y + spot.h * (1 - depth)]
+    case 'right':
+      return [spot.x + spot.w * (1 - depth), cy]
+    default:
+      return [spot.x + spot.w * depth, cy]
+  }
 }
 
 type At = (f: number) => { x: number; y: number; ux: number; uy: number }
@@ -136,15 +148,15 @@ function drawBar(ctx: CanvasRenderingContext2D, at: At, from: number, to: number
   ctx.globalAlpha = 1
 }
 
-export function CubeStream({ svgRef, width, height, points, trucks, items, tickMs, reducedMotion }: Props) {
+export function CubeStream({ svgRef, width, height, points, trucks, tunnel, items, tickMs, reducedMotion }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const tracked = useRef(new Map<number, Tracked>())
   const ghosts = useRef<Ghost[]>([])
   const tickAt = useRef(0)
   const frame = useRef(0)
   const scale = useRef({ s: 1, dpr: 1 })
-  const props = useRef({ points, trucks, tickMs, reducedMotion })
-  props.current = { points, trucks, tickMs, reducedMotion }
+  const props = useRef({ points, trucks, tunnel, tickMs, reducedMotion })
+  props.current = { points, trucks, tunnel, tickMs, reducedMotion }
 
   const draw = useRef<(now: number) => boolean>(() => false)
   draw.current = (now: number) => {
@@ -197,7 +209,17 @@ export function CubeStream({ svgRef, width, height, points, trucks, items, tickM
         runs.shift()
       }
     }
+    const hole = props.current.tunnel
+    if (hole) {
+      // everything except the tunnel
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(0, 0, width, height)
+      ctx.rect(hole.x, hole.y, hole.w, hole.h)
+      ctx.clip('evenodd')
+    }
     for (const r of runs) drawBar(ctx, at, r.from, r.to, r.color)
+    if (hole) ctx.restore()
     // small cubes pouring between trucks and the belt, sorted top-to-bottom so lower ones overlap upper ones
     const draws: { x: number; y: number; s: number; c: number; a: number }[] = []
     // cubes flying into the truck that picked them up

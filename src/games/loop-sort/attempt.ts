@@ -1,6 +1,6 @@
 import { CHAKKAR_CONFIG, continuesLeft, usesLeft, type AbilityId, type ChakkarConfig } from './config'
 import {
-  addConveyorSlots, addTruck, attemptTap, canAddConveyorSlot, canShuffle, canTap, hasNoMoves, initialState, isWon, MAX_TRUCKS, nextSpareDock,
+  addConveyorSlots, addTruck, attemptTap, canAddConveyorSlot, canShuffle, canTap, hasNoMoves, initialState, isWon, MAX_TRUCKS, SPARE_DOCKS, nextSpareDock,
   shuffleTruck, undoTo, type LevelDef, type LoopState, type TapError,
 } from './logic'
 
@@ -27,7 +27,8 @@ export interface Attempt {
 
 export function startAttempt(level: LevelDef, admin: boolean, config: ChakkarConfig = CHAKKAR_CONFIG): Attempt {
   const room = MAX_TRUCKS - level.trucks.length
-  const spare = Math.min(room, admin ? room : config.abilitiesPerLevel.extraTruck)
+  // Normal Mode: exactly the spare docks the levels were solved with; Admin Mode: a few more
+  const spare = Math.min(room, admin ? Math.max(SPARE_DOCKS, 4) : Math.min(SPARE_DOCKS, config.abilitiesPerLevel.extraTruck))
   return {
     level: level.n,
     admin,

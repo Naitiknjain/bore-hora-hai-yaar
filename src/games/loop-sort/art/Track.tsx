@@ -12,6 +12,8 @@ interface TrackProps {
   width?: number
   /** Points along the belt, in travel order, used to place direction arrows. */
   points: [number, number][]
+  /** Part of the loop that runs through a hidden tunnel (not drawn); its ends get caps. */
+  tunnel?: { x: number; y: number; w: number; h: number }
 }
 
 const rr = (x: number, y: number, w: number, h: number, r: number) => {
@@ -23,7 +25,7 @@ const rr = (x: number, y: number, w: number, h: number, r: number) => {
  * Raised conveyor loop: floor shadow, lit outer rim, recessed channel, inner rim lip and
  * engraved direction arrows. Pure decoration (no pointer events).
  */
-export const Track = memo(function Track({ x, y, w, h, radius, width = 34, points }: TrackProps) {
+export const Track = memo(function Track({ x, y, w, h, radius, width = 34, points, tunnel }: TrackProps) {
   const rim = width + 18
   const half = rim / 2
   // arrows halfway between consecutive belt positions, pointing in travel direction
@@ -34,8 +36,16 @@ export const Track = memo(function Track({ x, y, w, h, radius, width = 34, point
     const angle = (Math.atan2(q[1] - p[1], q[0] - p[0]) * 180) / Math.PI
     return { mx, my, angle }
   })
+  const maskId = tunnel ? `cc-tunnel-${Math.round(tunnel.x)}-${Math.round(tunnel.y)}-${Math.round(tunnel.h)}` : undefined
   return (
     <g aria-hidden style={{ pointerEvents: 'none' }}>
+      {tunnel && (
+        <mask id={maskId} maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 400} height={h + 600}>
+          <rect x={-50} y={-50} width={w + 400} height={h + 600} fill="#fff" />
+          <rect x={tunnel.x} y={tunnel.y} width={tunnel.w} height={tunnel.h} fill="#000" />
+        </mask>
+      )}
+      <g mask={maskId ? `url(#${maskId})` : undefined}>
       {/* ground shadow under the whole loop */}
       <rect {...rr(x - half - 6, y - half + 6, w + rim + 12, h + rim + 18, radius + half + 8)} fill="rgba(8,3,30,0.18)" />
       <rect {...rr(x - half - 1, y - half + 9, w + rim + 2, h + rim + 8, radius + half + 3)} fill="rgba(8,3,30,0.25)" />
@@ -66,6 +76,15 @@ export const Track = memo(function Track({ x, y, w, h, radius, width = 34, point
           fill="rgba(30,16,100,0.45)"
         />
       ))}
+      </g>
+      {/* end caps where the track enters and leaves the tunnel */}
+      {tunnel &&
+        [y, y + h].map((cy) => (
+          <g key={cy}>
+            <rect x={tunnel.x + tunnel.w - 10} y={cy - half + 6} width={16} height={rim} rx={7} fill={CC.rimDark} />
+            <rect x={tunnel.x + tunnel.w - 10} y={cy - half} width={16} height={rim} rx={7} fill="url(#cc-rim)" stroke="rgba(214,202,255,0.9)" strokeWidth={2} />
+          </g>
+        ))}
     </g>
   )
 })
