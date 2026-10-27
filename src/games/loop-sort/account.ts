@@ -18,7 +18,7 @@ import { ApiError, backendConfigured, rpc } from '../../lib/supabase'
 
 export const LOCAL_MAX_LIVES = 5
 export const LOCAL_REGEN_MS = 20 * 60 * 1000
-export const TOTAL_LEVELS = 60
+export const TOTAL_LEVELS = 800
 
 export interface LoopEvent {
   id: string

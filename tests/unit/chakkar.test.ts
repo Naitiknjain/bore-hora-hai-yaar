@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import levels from '../../src/games/loop-sort/levels.json'
 import { CHAKKAR_CONFIG, continuesLeft, usesLeft, type ChakkarConfig } from '../../src/games/loop-sort/config'
 import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, applyAbility, type Attempt } from '../../src/games/loop-sort/attempt'
+import { BLOCK_COLORS, BLOCK_NAMES } from '../../src/games/loop-sort/art/Block3D'
+import { BLOCK_PALETTE_SIZE, difficultyOf, FEATURE_START } from '../../src/games/loop-sort/logic'
 import { attemptTap, beltCount, beltLayout, boardLayout, conveyorLoad, freeSpace, initialState, isWon, maxCapacity, MAX_TRUCKS, neighbours, replay, settle, SPARE_DOCKS, tap, tick, type LevelDef, type LoopState } from '../../src/games/loop-sort/logic'
 
 const LEVELS = levels as LevelDef[]
@@ -248,8 +250,8 @@ describe('abilities', () => {
 })
 
 describe('levels', () => {
-  it('ships 60 original solvable levels with at most 10 trucks (room for Extra Truck)', () => {
-    expect(LEVELS).toHaveLength(60)
+  it('ships 800 original solvable levels with at most 10 trucks (room for Extra Truck)', () => {
+    expect(LEVELS).toHaveLength(800)
     for (const l of LEVELS) {
       expect(l.trucks.length).toBeLessThanOrEqual(10)
       expect(replay(l, l.solution)).toBe(true)
@@ -428,5 +430,37 @@ describe('obstacles 3', () => {
     const groups = [has((t) => t.carpet !== undefined), has((t) => !!t.queue?.length), has((t) => !!t.screws?.length)]
     for (const g of groups) expect(g.length).toBeGreaterThan(1)
     for (const l of groups.flat()) expect(replay(l, l.solution), `level ${l.n}`).toBe(true)
+  })
+})
+
+describe('campaign', () => {
+  it('each obstacle first appears on the reference level and has that level to itself', () => {
+    const has: Record<string, (t: LevelDef['trucks'][number]) => boolean> = {
+      curtain: (t) => t.lock !== undefined,
+      barrier: (t) => !!t.barrier,
+      ice: (t) => t.ice !== undefined,
+      lock: (t) => t.shutter !== undefined,
+      tag: (t) => t.tag !== undefined,
+      rope: (t) => t.rope !== undefined,
+      carpet: (t) => t.carpet !== undefined,
+      spawner: (t) => !!t.queue?.length,
+      screw: (t) => !!t.screws?.length,
+    }
+    for (const [f, start] of Object.entries(FEATURE_START)) {
+      const first = LEVELS.find((l) => l.trucks.some(has[f]))
+      expect(first?.n, f).toBe(start)
+      for (const [g, test] of Object.entries(has)) if (g !== f) expect(first!.trucks.some(test), `${f} intro level also has ${g}`).toBe(false)
+    }
+  })
+
+  it('marks Hard and Super Hard levels and uses the whole colour palette later on', () => {
+    for (const l of LEVELS) expect(l.difficulty, `level ${l.n}`).toBe(difficultyOf(l.n))
+    expect(LEVELS.filter((l) => l.difficulty === 'super').length).toBeGreaterThan(20)
+    const colours = new Set(LEVELS.flatMap((l) => l.trucks.flatMap((t) => t.blocks)))
+    expect(colours.size).toBe(BLOCK_PALETTE_SIZE)
+    expect(BLOCK_COLORS).toHaveLength(BLOCK_PALETTE_SIZE)
+    expect(BLOCK_NAMES).toHaveLength(BLOCK_PALETTE_SIZE)
+    // the first 60 levels stick to the 8 bright starter colours
+    expect(Math.max(...LEVELS.slice(0, 60).flatMap((l) => l.trucks.flatMap((t) => t.blocks)))).toBeLessThan(8)
   })
 })

@@ -19,6 +19,8 @@
  */
 
 export const TRUCK_CAPACITY = 4
+/** Cube colours available to levels (art/Block3D.tsx draws one per index). */
+export const BLOCK_PALETTE_SIZE = 12
 export const MAX_TRUCKS = 12
 /**
  * Empty docks a Normal Mode level reserves for the Extra Truck ability. Levels are solved on exactly
@@ -60,6 +62,8 @@ export interface LevelDef {
   trucks: TruckDef[]
   /** A verified winning sequence of truck taps (each applied on a settled board, no abilities). */
   solution: number[]
+  /** Hard / Super Hard badge */
+  difficulty?: Difficulty
 }
 
 export interface Truck {
@@ -817,27 +821,77 @@ function rng32(seed: number) {
   }
 }
 
+export type Feature = 'curtain' | 'barrier' | 'ice' | 'lock' | 'tag' | 'rope' | 'carpet' | 'spawner' | 'screw'
+export type Difficulty = 'hard' | 'super'
+
+/** First level of each obstacle - the reference's pacing (screw has no reference; it comes last). */
+export const FEATURE_START: Record<Feature, number> = {
+  curtain: 20,
+  barrier: 60,
+  ice: 101,
+  lock: 150,
+  tag: 201,
+  rope: 250,
+  carpet: 300,
+  spawner: 350,
+  screw: 400,
+}
+
+/** Hard and Super Hard levels (the reference marks some levels with skull badges). */
+export function difficultyOf(n: number): Difficulty | undefined {
+  if (n >= 50 && n % 25 === 0) return 'super'
+  if (n >= 15 && n % 7 === 0) return 'hard'
+  return undefined
+}
+
 export function levelParams(n: number) {
-  // colours (= filled trucks) grow from 2 to 8; total trucks stay <= 10 so Extra Truck has room
-  const colors = n <= 2 ? 2 : n <= 6 ? 3 : n <= 14 ? 4 : n <= 25 ? 5 : n <= 38 ? 6 : n <= 50 ? 7 : 8
-  const empties = n <= 3 ? 2 : n <= 30 ? 1 + (n % 2) : n % 3 === 0 ? 2 : 1
+  const r = rng32(n * 7919 + 13)
+  const difficulty = difficultyOf(n)
+  // colours (= filled trucks) grow from 2 to 7 over the first 60 levels, then vary between 6 and 8;
+  // total trucks stay <= 10 so Extra Truck has room
+  let colors = n <= 2 ? 2 : n <= 6 ? 3 : n <= 14 ? 4 : n <= 25 ? 5 : n <= 40 ? 6 : n <= 60 ? 7 : 6 + Math.floor(r() * 3)
+  if (difficulty) colors = Math.min(8, colors + 1)
+  const empties = n <= 3 ? 2 : n <= 30 ? 1 + (n % 2) : r() < 0.35 ? 2 : 1
   // conveyor capacity in cubes (the reference uses roughly 7-14)
-  const capacity = n <= 6 ? 8 : n <= 20 ? 7 : n <= 40 ? 6 : 5
+  let capacity = n <= 6 ? 8 : n <= 20 ? 7 : n <= 40 ? 6 : 5 + Math.floor(r() * 3)
+  if (difficulty === 'super') capacity = Math.max(4, capacity - 1)
   const hidden = n >= 6
-  const curtain = n >= 18 && n % 3 === 0
-  // obstacles, on a compressed version of the reference's pacing (re-paced with the long campaign)
-  const barrier = n >= 20 && (n % 3 === 1 || (n >= 45 && n % 4 === 0))
-  const ice = n >= 29 && (n % 3 === 2 || (n >= 45 && n % 4 === 2))
-  const lock = n >= 33 && n % 4 === 1
-  const tag = n >= 39 && n % 4 === 3
-  const rope = n >= 43 && n % 5 === 3
-  const carpet = n >= 47 && n % 5 === 2
-  const spawner = n >= 49 && n % 5 === 4
-  const screw = n >= 50 && n % 5 === 0
+  // obstacles: a new one gets its first level to itself and shows up often for a while;
+  // afterwards each level mixes up to two of the ones already met
+  const unlocked = (Object.keys(FEATURE_START) as Feature[]).filter((f) => FEATURE_START[f] <= n)
+  const fresh = unlocked.find((f) => n - FEATURE_START[f] < 12)
+  const on = new Set<Feature>()
+  const intro = unlocked.find((f) => FEATURE_START[f] === n)
+  if (intro) on.add(intro)
+  else {
+    if (fresh && r() < 0.7) on.add(fresh)
+    const extra = n < 60 ? (r() < 0.35 ? 1 : 0) : n < 200 ? (r() < 0.6 ? 1 : 0) : r() < 0.25 ? 2 : r() < 0.8 ? 1 : 0
+    const pool = unlocked.filter((f) => !on.has(f))
+    for (let k = 0; k < extra && pool.length; k += 1) on.add(pool.splice(Math.floor(r() * pool.length), 1)[0])
+  }
   // layouts in the reference's order: rows first, stacked sideways trucks from level 3, the C-shaped
   // tunnel track from level 7, then a mix
   const style: LayoutStyle = n <= 2 ? 'rows' : n <= 6 ? 'stack' : (['tunnel', 'rows', 'stack'] as const)[(n - 7) % 3]
-  return { colors, empties, capacity, hidden, curtain, barrier, ice, lock, tag, rope, carpet, spawner, screw, style }
+  // later levels draw their colours from the whole palette, like the reference's browns, greys, white and black
+  const palette = n <= 60 ? 8 : BLOCK_PALETTE_SIZE
+  return {
+    colors,
+    empties,
+    capacity,
+    hidden,
+    difficulty,
+    palette,
+    style,
+    curtain: on.has('curtain'),
+    barrier: on.has('barrier'),
+    ice: on.has('ice'),
+    lock: on.has('lock'),
+    tag: on.has('tag'),
+    rope: on.has('rope'),
+    carpet: on.has('carpet'),
+    spawner: on.has('spawner'),
+    screw: on.has('screw'),
+  }
 }
 
 /** Level 1 is a one-tap tutorial: one colour split over two trucks. */
@@ -967,11 +1021,37 @@ function placeObstacles(trucks: TruckDef[], p: ReturnType<typeof levelParams>, r
 
 export function generateLevel(n: number): LevelDef {
   if (n === 1) return tutorialLevel()
-  const p = levelParams(n)
-  for (let attempt = 0; attempt < 600; attempt += 1) {
+  const base = levelParams(n)
+  // if a combination of obstacles cannot be placed or solved, drop obstacles one at a time
+  const dropOrder: Feature[] = ['screw', 'spawner', 'carpet', 'rope', 'tag', 'lock', 'ice', 'barrier', 'curtain']
+  for (let relax = 0; relax <= dropOrder.length; relax += 1) {
+    const p = { ...base }
+    let dropped = 0
+    for (const f of dropOrder) {
+      if (dropped >= relax) break
+      if (p[f]) {
+        p[f] = false
+        dropped += 1
+      }
+    }
+    if (relax > 0 && dropped < relax) break
+    const level = tryGenerate(n, p, relax ? 200 : 600)
+    if (level) return level
+  }
+  throw new Error(`Could not generate level ${n}`)
+}
+
+function tryGenerate(n: number, p: ReturnType<typeof levelParams>, attempts: number): LevelDef | null {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const rand = rng32(n * 2654435761 + attempt * 97 + 1)
+    // which palette colours this level uses (always the first ones on early levels)
+    const shades = Array.from({ length: p.palette }, (_, c) => c)
+    for (let i = shades.length - 1; i > 0 && p.palette > 8; i -= 1) {
+      const j = Math.floor(rand() * (i + 1))
+      ;[shades[i], shades[j]] = [shades[j], shades[i]]
+    }
     const pool: number[] = []
-    for (let c = 0; c < p.colors; c += 1) for (let k = 0; k < TRUCK_CAPACITY; k += 1) pool.push(c)
+    for (let c = 0; c < p.colors; c += 1) for (let k = 0; k < TRUCK_CAPACITY; k += 1) pool.push(shades[c])
     for (let i = pool.length - 1; i > 0; i -= 1) {
       const j = Math.floor(rand() * (i + 1))
       ;[pool[i], pool[j]] = [pool[j], pool[i]]
@@ -984,8 +1064,9 @@ export function generateLevel(n: number): LevelDef {
     if (p.curtain) {
       const candidates = trucks.map((t, i) => (t.blocks.length ? i : -1)).filter((i) => i >= 0)
       const idx = candidates[Math.floor(rand() * candidates.length)]
-      const lockColor = Math.floor(rand() * p.colors)
-      if (!trucks[idx].blocks.includes(lockColor)) trucks[idx] = { ...trucks[idx], lock: lockColor }
+      const lockColor = shades[Math.floor(rand() * p.colors)]
+      if (trucks[idx].blocks.includes(lockColor)) continue
+      trucks[idx] = { ...trucks[idx], lock: lockColor }
     }
     const placed = placeObstacles(trucks, p, rand)
     if (!placed || placed.length > 10) continue
@@ -997,9 +1078,18 @@ export function generateLevel(n: number): LevelDef {
     if (!any) continue
     // shortest solution when the search space is small enough; otherwise the level is hard anyway
     const shortest = solveLevel(def, 15000, board)
-    const minTaps = Math.min(3 + n / 6, 10)
+    const minTaps = Math.min(3 + n / 6, 10) + (p.difficulty === 'super' ? 6 : p.difficulty === 'hard' ? 3 : 0)
     if (shortest && shortest.length < minTaps) continue
-    return { n, style: p.style, colors: p.colors, capacity: p.capacity, hidden: p.hidden, trucks, solution: shortest ?? any }
+    return {
+      n,
+      style: p.style,
+      colors: p.colors,
+      capacity: p.capacity,
+      hidden: p.hidden,
+      ...(p.difficulty ? { difficulty: p.difficulty } : {}),
+      trucks,
+      solution: shortest ?? any,
+    }
   }
-  throw new Error(`Could not generate level ${n}`)
+  return null
 }

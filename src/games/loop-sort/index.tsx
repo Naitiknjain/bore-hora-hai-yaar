@@ -33,6 +33,7 @@ import { canShuffle, conveyorLoad, nextSpareDock, tick, type LevelDef, type Loop
 import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton, SlotPlusIcon, TruckPlusIcon } from './ui'
 
 const LEVELS = levelsData as LevelDef[]
+const LEVELS_PER_PAGE = 40
 
 /** Obstacles get a short introduction card on the first level that uses them. */
 type Obstacle = 'barrier' | 'ice' | 'lock' | 'tag' | 'rope' | 'carpet' | 'spawner' | 'screw'
@@ -194,6 +195,7 @@ export default function LoopSort() {
   const [shuffleMode, setShuffleMode] = useState(false)
   const [justAdded, setJustAdded] = useState<number | null>(null)
   const [intro, setIntro] = useState<Obstacle | null>(null)
+  const [levelPage, setLevelPage] = useState<number | null>(null)
   const [confirm, setConfirm] = useState<null | 'restart' | 'leave'>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const { settings, update } = useSettings()
@@ -549,6 +551,9 @@ export default function LoopSort() {
 
   // ---------------- LEVELS ----------------
   if (screen === 'levels') {
+    const pages = Math.ceil(LEVELS.length / LEVELS_PER_PAGE)
+    // opens on the page with the next level to play
+    const page = Math.max(0, Math.min(pages - 1, levelPage ?? Math.floor((nextLevel - 1) / LEVELS_PER_PAGE)))
     return (
       <div className={shell}>
         <div className="flex items-center gap-2">
@@ -559,8 +564,31 @@ export default function LoopSort() {
           <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} />
         </div>
         {admin && <p className="mt-2 text-sm text-[#ffd23f]">Admin Mode: open any level. Opening a level does not complete it.</p>}
-        <div className="mt-4 grid grid-cols-5 gap-2 sm:grid-cols-8">
-          {LEVELS.map((l) => {
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setLevelPage(page - 1)}
+            disabled={page === 0}
+            aria-label="Previous levels"
+            className="inline-flex size-10 items-center justify-center rounded-xl bg-black/20 hover:bg-black/30 disabled:opacity-30"
+          >
+            <ArrowLeft className="size-5" />
+          </button>
+          <p className="font-display text-lg font-extrabold" aria-live="polite">
+            Levels {page * LEVELS_PER_PAGE + 1}-{Math.min(LEVELS.length, (page + 1) * LEVELS_PER_PAGE)}
+          </p>
+          <button
+            type="button"
+            onClick={() => setLevelPage(page + 1)}
+            disabled={page >= pages - 1}
+            aria-label="Next levels"
+            className="inline-flex size-10 items-center justify-center rounded-xl bg-black/20 hover:bg-black/30 disabled:opacity-30"
+          >
+            <ArrowLeft className="size-5 rotate-180" />
+          </button>
+        </div>
+        <div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-8">
+          {LEVELS.slice(page * LEVELS_PER_PAGE, (page + 1) * LEVELS_PER_PAGE).map((l) => {
             const done = completed.has(l.n)
             const locked = !admin && l.n > unlockedUpTo && !done
             return (
@@ -569,13 +597,18 @@ export default function LoopSort() {
                 type="button"
                 disabled={locked || !canStartNormal}
                 onClick={() => startLevel(l.n)}
-                aria-label={`Level ${l.n}${done ? ', completed' : locked ? ', locked' : ''}`}
+                aria-label={`Level ${l.n}${l.difficulty ? (l.difficulty === 'super' ? ', super hard' : ', hard') : ''}${done ? ', completed' : locked ? ', locked' : ''}`}
                 className={`relative flex aspect-square items-center justify-center rounded-2xl font-display text-xl font-bold shadow-[0_3px_0_0_rgba(0,0,0,0.25)] transition active:translate-y-0.5 ${
                   done ? 'bg-[#3ee08f] text-[#0b1020]' : locked ? 'bg-black/20 text-white/40' : 'bg-white/90 text-[#2a1a6e] hover:bg-white'
                 }`}
               >
                 {locked ? <Lock className="size-4" /> : l.n}
                 {done && <Check className="absolute right-1 top-1 size-3.5" />}
+                {l.difficulty && (
+                  <span className={`absolute -top-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] leading-none ${locked ? 'opacity-50' : ''}`} aria-hidden>
+                    {l.difficulty === 'super' ? '💀💀' : '💀'}
+                  </span>
+                )}
               </button>
             )
           })}
@@ -623,9 +656,26 @@ export default function LoopSort() {
           </span>
         </HudPill>
         </div>
-        <HudPill tone={full ? 'danger' : 'default'} label={`Conveyor ${count} of ${board.capacity} cubes`} testId="conveyor-count">
-          <Box className="size-5 max-[399px]:size-4" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
-        </HudPill>
+        <div className="relative">
+          <HudPill tone={full ? 'danger' : 'default'} label={`Conveyor ${count} of ${board.capacity} cubes`} testId="conveyor-count">
+            <Box className="size-5 max-[399px]:size-4" strokeWidth={2.4} aria-hidden /> {count}/{board.capacity}
+          </HudPill>
+          {level.difficulty && (
+            // Hard / Super Hard badge, like the reference: skulls above the counter, a label below it
+            <>
+              <span className="pointer-events-none absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs leading-none" aria-hidden>
+                {level.difficulty === 'super' ? '💀💀💀' : '💀'}
+              </span>
+              <span
+                className={`pointer-events-none absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-px text-[9px] font-extrabold uppercase leading-tight tracking-wide text-white ${
+                  level.difficulty === 'super' ? 'bg-[#d92d48]' : 'bg-[#9b3fd6]'
+                }`}
+              >
+                {level.difficulty === 'super' ? 'Super hard' : 'Hard'}
+              </span>
+            </>
+          )}
+        </div>
         <div className="flex min-w-0 items-center gap-1.5 min-[380px]:gap-2">
           <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} compact />
           <RoundIconButton label="Game menu" onClick={() => setMenuOpen(true)}>

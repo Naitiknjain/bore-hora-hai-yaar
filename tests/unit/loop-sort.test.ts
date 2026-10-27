@@ -71,8 +71,8 @@ describe('loop sort rules', () => {
 })
 
 describe('loop sort levels', () => {
-  it('ships 60 original levels, each with 4 blocks per colour and a verified solution', () => {
-    expect(LEVELS).toHaveLength(60)
+  it('ships 800 original levels, each with 4 blocks per colour and a verified solution', () => {
+    expect(LEVELS).toHaveLength(800)
     LEVELS.forEach((l, i) => {
       expect(l.n).toBe(i + 1)
       const counts = new Map<number, number>()

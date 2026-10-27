@@ -1,7 +1,8 @@
 /** Colour helpers + glossy, dimensional blocks (original artwork drawn in code). */
 
-export const BLOCK_COLORS = ['#ff3b4f', '#3d7bff', '#ffc928', '#2fd67c', '#a35cff', '#ff8a2a', '#ff5fb0', '#35c8f0']
-export const BLOCK_NAMES = ['Red', 'Blue', 'Yellow', 'Green', 'Purple', 'Orange', 'Pink', 'Sky']
+// the first 8 are the bright starter colours; later levels also use brown, grey, white and black
+export const BLOCK_COLORS = ['#ff3b4f', '#3d7bff', '#ffc928', '#2fd67c', '#a35cff', '#ff8a2a', '#ff5fb0', '#35c8f0', '#a8683a', '#9aa3b4', '#f4f1ea', '#3a3646']
+export const BLOCK_NAMES = ['Red', 'Blue', 'Yellow', 'Green', 'Purple', 'Orange', 'Pink', 'Sky', 'Brown', 'Grey', 'White', 'Black']
 
 /** Mixes a hex colour towards white (amt > 0) or black (amt < 0). */
 export function shade(hex: string, amt: number): string {
