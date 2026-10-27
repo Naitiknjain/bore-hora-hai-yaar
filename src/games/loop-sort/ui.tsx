@@ -38,14 +38,29 @@ interface AbilityProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: ReactNode
   name: string
   count: number
+  /** coins to buy one when the stock is empty (shown instead of the count badge) */
+  price?: number
   active?: boolean
+}
+
+/** A gold coin. */
+export function CoinIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <circle cx="12" cy="12.8" r="10" fill="#b9780f" />
+      <circle cx="12" cy="11.6" r="10" fill="#ffc928" stroke="#e59a0b" strokeWidth="1.2" />
+      <circle cx="12" cy="11.6" r="6.6" fill="none" stroke="#e59a0b" strokeWidth="1.4" />
+      <path d="M13.6 8.6c-.5-.6-1.2-.9-2-.9-1.2 0-2 .7-2 1.6 0 2.1 4.3 1.2 4.3 3.4 0 1-.9 1.7-2.2 1.7-.9 0-1.7-.4-2.2-1M11.7 6.6v1.1m0 6.9v1" fill="none" stroke="#a86400" strokeWidth="1.5" strokeLinecap="round" />
+      <ellipse cx="8.4" cy="6.8" rx="2.2" ry="1.1" fill="#fff3b0" opacity="0.7" transform="rotate(-30 8.4 6.8)" />
+    </svg>
+  )
 }
 
 /**
  * Square, gold-rimmed ability button with a green count badge (∞ in Admin Mode), like the reference's
  * bottom bar. Used up or unavailable abilities turn grey. The name is the accessible label and tooltip.
  */
-export function AbilityButton({ icon, name, count, active, disabled, ...rest }: AbilityProps) {
+export function AbilityButton({ icon, name, count, price, active, disabled, ...rest }: AbilityProps) {
   const off = disabled && !active
   return (
     <button type="button" disabled={disabled} title={name} className="group flex min-w-0 justify-center disabled:cursor-not-allowed" {...rest}>
@@ -60,13 +75,21 @@ export function AbilityButton({ icon, name, count, active, disabled, ...rest }: 
       >
         <span className="pointer-events-none absolute inset-x-2.5 top-1 h-2.5 rounded-full bg-white/25" aria-hidden />
         {icon}
-        <span
-          className={`absolute -bottom-1.5 -right-1.5 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-white px-1 text-xs font-extrabold text-white ${
-            count > 0 ? 'bg-[#2fb84d]' : 'bg-[#8a8aa8]'
-          }`}
-        >
-          {count === Infinity ? '∞' : count}
-        </span>
+        {count === 0 && price !== undefined ? (
+          // out of stock: buy one with coins, like the reference
+          <span className="absolute -bottom-2 left-1/2 flex h-5 -translate-x-1/2 items-center gap-0.5 whitespace-nowrap rounded-full border-2 border-white bg-[#2a1a6e] pl-0.5 pr-1.5 text-[11px] font-extrabold text-white">
+            <CoinIcon className="size-3.5" />
+            {price}
+          </span>
+        ) : (
+          <span
+            className={`absolute -bottom-1.5 -right-1.5 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-white px-1 text-xs font-extrabold text-white ${
+              count > 0 ? 'bg-[#2fb84d]' : 'bg-[#8a8aa8]'
+            }`}
+          >
+            {count === Infinity ? '∞' : count}
+          </span>
+        )}
       </span>
     </button>
   )

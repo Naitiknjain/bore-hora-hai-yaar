@@ -88,8 +88,12 @@ export function giveUp(a: Attempt): Attempt {
   return { ...a, status: 'given-up', pending: null }
 }
 
-export function abilityAvailable(a: Attempt, id: AbilityId, config: ChakkarConfig = CHAKKAR_CONFIG): boolean {
-  if (usesLeft(id, a.used[id], a.admin, config) <= 0) return false
+/**
+ * Whether an ability can be used now. `affordable` comes from the player's wallet (stock or coins);
+ * without it the per-attempt allowance in the config applies.
+ */
+export function abilityAvailable(a: Attempt, id: AbilityId, config: ChakkarConfig = CHAKKAR_CONFIG, affordable?: boolean): boolean {
+  if (!(affordable ?? usesLeft(id, a.used[id], a.admin, config) > 0)) return false
   switch (id) {
     case 'undo':
       return a.history.length > 0 && (a.status === 'playing' || a.status === 'stuck')
@@ -106,8 +110,13 @@ export function abilityAvailable(a: Attempt, id: AbilityId, config: ChakkarConfi
  * Uses an ability. `truck` is required for Shuffle. Admin Mode has unlimited uses but the same
  * consistency checks (e.g. no more than 12 trucks, conveyor never larger than the loop).
  */
-export function applyAbility(a: Attempt, id: AbilityId, opts: { truck?: number; rand?: () => number } = {}, config: ChakkarConfig = CHAKKAR_CONFIG): Attempt {
-  if (!abilityAvailable(a, id, config)) return a
+export function applyAbility(
+  a: Attempt,
+  id: AbilityId,
+  opts: { truck?: number; rand?: () => number; affordable?: boolean } = {},
+  config: ChakkarConfig = CHAKKAR_CONFIG,
+): Attempt {
+  if (!abilityAvailable(a, id, config, opts.affordable)) return a
   const used = { ...a.used, [id]: a.used[id] + 1 }
   switch (id) {
     case 'undo': {

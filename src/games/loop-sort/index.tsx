@@ -27,10 +27,11 @@ import { ApiError, friendlyError } from '../../lib/supabase'
 import { useLoopAccount } from './account'
 import { abilityAvailable, afterTick, canContinue, continueAttempt, giveUp, startAttempt, tapTruck, applyAbility, type Attempt } from './attempt'
 import { BLOCK_NAMES, LoopBoard, type BeltItem } from './Board'
-import { ABILITY_LABELS, CHAKKAR_CONFIG, continuesLeft, usesLeft, type AbilityId } from './config'
+import { ABILITY_LABELS, CHAKKAR_CONFIG, continuesLeft, type AbilityId } from './config'
 import levelsData from './levels.json'
 import { canShuffle, conveyorLoad, nextSpareDock, tick, type LevelDef, type LoopState } from './logic'
-import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton, SlotPlusIcon, TruckPlusIcon } from './ui'
+import { AbilityButton, ChunkyButton, CoinIcon, HudPill, Popup, RoundIconButton, SlotPlusIcon, TruckPlusIcon } from './ui'
+import { BOOSTER_PRICE, canAfford, levelReward, useLoopWallet } from './wallet'
 
 const LEVELS = levelsData as LevelDef[]
 const LEVELS_PER_PAGE = 40
@@ -147,6 +148,22 @@ function Title() {
   )
 }
 
+function CoinsPill({ coins, compact }: { coins: number; compact?: boolean }) {
+  if (compact)
+    return (
+      <HudPill label={`${coins} coins`} testId="coins">
+        <CoinIcon className="size-6" />
+        {coins}
+      </HudPill>
+    )
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-full bg-[#2a1a6e]/80 px-3 py-1.5 text-sm font-bold text-white" aria-label={`${coins} coins`} data-testid="coins">
+      <CoinIcon className="size-5" />
+      {coins}
+    </div>
+  )
+}
+
 function LivesPill({ lives, max, nextLifeAt, admin, compact }: { lives: number; max: number; nextLifeAt: number | null; admin: boolean; compact?: boolean }) {
   const now = useNow(nextLifeAt !== null && !admin && !compact)
   if (compact)
@@ -177,6 +194,9 @@ function LivesPill({ lives, max, nextLifeAt, admin, compact }: { lives: number; 
 
 export default function LoopSort() {
   const { account, pending, error, isOnlineMode, record, enterAdmin, exitAdmin, selectLevel } = useLoopAccount()
+  const { wallet, spendBooster } = useLoopWallet(account.completed, pending, account.admin)
+  /** coins this attempt pays if won (only a level's first completion pays) */
+  const [reward, setReward] = useState(0)
   const admin = account.admin
   const [screen, setScreen] = useState<Screen>('home')
   const [pinOpen, setPinOpen] = useState(false)
@@ -259,6 +279,7 @@ export default function LoopSort() {
     setShuffleMode(false)
     setJustAdded(null)
     setIntro(INTRO_LEVEL[n] ?? null)
+    setReward(account.completed.includes(n) ? 0 : levelReward(n))
     recorded.current = false
     idle.current = 0
     setScreen('play')
@@ -333,7 +354,10 @@ export default function LoopSort() {
         setMessage('Pick a truck with at least two different colours to shuffle.')
         return
       }
-      commit(a, applyAbility(a, 'shuffle', { truck: i }))
+      const shuffled = applyAbility(a, 'shuffle', { truck: i, affordable: canAfford(wallet, 'shuffle', admin) })
+      if (shuffled === a) return
+      spendBooster('shuffle')
+      commit(a, shuffled)
       setShuffleMode(false)
       setMessage('Shuffled!')
       sfx.flip()
@@ -382,14 +406,15 @@ export default function LoopSort() {
     const a = attemptRef.current
     if (!a) return
     if (id === 'shuffle') {
-      if (!shuffleMode && !abilityAvailable(a, 'shuffle')) return
+      if (!shuffleMode && !abilityAvailable(a, 'shuffle', CHAKKAR_CONFIG, canAfford(wallet, 'shuffle', admin))) return
       setMessage(shuffleMode ? null : 'Tap a truck to shuffle its cubes.')
       setShuffleMode(!shuffleMode)
       return
     }
     const dock = nextSpareDock(a.state)
-    const next = applyAbility(a, id)
+    const next = applyAbility(a, id, { affordable: canAfford(wallet, id, admin) })
     if (next === a) return
+    spendBooster(id)
     setShuffleMode(false)
     commit(a, next, id === 'undo')
     if (id === 'undo') setMessage('Last tap undone.')
@@ -463,7 +488,10 @@ export default function LoopSort() {
     return (
       <div className={shell}>
         <div className="flex items-center justify-between gap-2">
-          <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} />
+          <div className="flex items-center gap-2">
+            <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} />
+            <CoinsPill coins={wallet.coins} />
+          </div>
           {admin ? (
             <Button size="sm" variant="secondary" disabled={switching} onClick={backToNormal} icon={<ShieldOff className="size-4" />}>
               Normal Mode
@@ -632,7 +660,10 @@ export default function LoopSort() {
   ]
   const shuffleTargets = shuffleMode ? board.trucks.map((_, i) => i).filter((i) => canShuffle(board, i)) : []
   const leftCont = continuesLeft(attempt.continuesUsed, admin)
-  const slotUses = usesLeft('extraSlot', attempt.used.extraSlot, admin)
+  // boosters come from the wallet: the stock first, then coins
+  const afford = (id: AbilityId) => canAfford(wallet, id, admin)
+  const boosterLabel = (id: AbilityId) =>
+    admin ? 'free in Admin Mode' : wallet.boosters[id] > 0 ? `${wallet.boosters[id]} left` : `${BOOSTER_PRICE[id]} coins`
   const full = count >= board.capacity
   const restart = () => {
     setMenuOpen(false)
@@ -677,7 +708,7 @@ export default function LoopSort() {
           )}
         </div>
         <div className="flex min-w-0 items-center gap-1.5 min-[380px]:gap-2">
-          <LivesPill lives={account.lives} max={account.maxLives} nextLifeAt={account.nextLifeAt} admin={admin} compact />
+          <CoinsPill coins={wallet.coins} compact />
           <RoundIconButton label="Game menu" onClick={() => setMenuOpen(true)}>
             <Settings className="size-5" strokeWidth={2.6} />
           </RoundIconButton>
@@ -712,6 +743,11 @@ export default function LoopSort() {
           {status === 'won' && (
             <Popup label="Level complete" emoji="🎉" title={`Level ${level.n} done!`}>
               <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">Saare cubes sorted. Shabaash!</p>
+              {reward > 0 && (
+                <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#fff3c4] px-3 py-1 font-display text-lg font-extrabold text-[#8a5a00]">
+                  <CoinIcon className="size-5" /> +{reward}
+                </p>
+              )}
               <div className="mt-4 grid gap-2.5">
                 {level.n < LEVELS.length && (
                   <ChunkyButton onClick={() => startLevel(level.n + 1)} data-autofocus disabled={!canStartNormal}>
@@ -737,9 +773,9 @@ export default function LoopSort() {
                     {!admin && <span className="whitespace-nowrap rounded-full bg-white/40 px-2 py-0.5 text-xs">{leftCont} free</span>}
                   </ChunkyButton>
                 )}
-                {abilityAvailable(attempt, 'extraSlot') && (
+                {abilityAvailable(attempt, 'extraSlot', CHAKKAR_CONFIG, afford('extraSlot')) && (
                   <ChunkyButton tone="yellow" onClick={() => ability('extraSlot')}>
-                    Use +1 Slot ({slotUses === Infinity ? '∞' : slotUses} left)
+                    Use +1 Slot ({boosterLabel('extraSlot')})
                   </ChunkyButton>
                 )}
                 <ChunkyButton tone="red" onClick={doGiveUp}>
@@ -752,10 +788,12 @@ export default function LoopSort() {
             <Popup label="No moves left" emoji="🚧" title="No moves left">
               <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">No truck can be tapped and the waiting cubes have nowhere to go.</p>
               <div className="mt-4 grid gap-2.5">
-                {abilityAvailable(attempt, 'extraTruck') && <ChunkyButton onClick={() => ability('extraTruck')}>Add an Extra Truck</ChunkyButton>}
-                {abilityAvailable(attempt, 'undo') && (
+                {abilityAvailable(attempt, 'extraTruck', CHAKKAR_CONFIG, afford('extraTruck')) && (
+                  <ChunkyButton onClick={() => ability('extraTruck')}>Add an Extra Truck ({boosterLabel('extraTruck')})</ChunkyButton>
+                )}
+                {abilityAvailable(attempt, 'undo', CHAKKAR_CONFIG, afford('undo')) && (
                   <ChunkyButton tone="yellow" onClick={() => ability('undo')}>
-                    Undo last tap
+                    Undo last tap ({boosterLabel('undo')})
                   </ChunkyButton>
                 )}
                 <ChunkyButton tone="red" onClick={doGiveUp}>
@@ -786,8 +824,8 @@ export default function LoopSort() {
         {/* abilities */}
         <div className="mt-3 flex shrink-0 justify-center gap-4 px-1 pb-1 min-[380px]:gap-6 lg:mt-0 lg:w-24 lg:flex-col lg:gap-6 lg:px-0 short:mt-0 short:w-16 short:flex-col short:gap-2 short:px-0">
           {abilities.map(({ id, icon }) => {
-            const left = usesLeft(id, attempt.used[id], admin)
-            const available = abilityAvailable(attempt, id)
+            const left = admin ? Infinity : wallet.boosters[id]
+            const available = abilityAvailable(attempt, id, CHAKKAR_CONFIG, afford(id))
             const active = id === 'shuffle' && shuffleMode
             return (
               <AbilityButton
@@ -795,11 +833,12 @@ export default function LoopSort() {
                 icon={icon}
                 name={ABILITY_LABELS[id]}
                 count={left}
+                price={BOOSTER_PRICE[id]}
                 active={active}
                 onClick={() => ability(id)}
                 disabled={status !== 'playing' || (!available && !active)}
                 aria-pressed={id === 'shuffle' ? shuffleMode : undefined}
-                aria-label={`${ABILITY_LABELS[id]}, ${left === Infinity ? 'unlimited' : `${left} left`}`}
+                aria-label={`${ABILITY_LABELS[id]}, ${boosterLabel(id)}`}
               />
             )
           })}
