@@ -42,6 +42,8 @@ interface Props {
   done: boolean
   locked: boolean
   lockColor?: number
+  /** index of the first cube that just landed (plays the settle animation), or -1 */
+  settleFrom?: number
 }
 
 /**
@@ -49,7 +51,7 @@ interface Props {
  * thickness below it, a flat hood at the end facing the belt and a recessed cargo bed holding up to
  * 4 cubes. Neighbouring same-colour cubes are drawn as one long block.
  */
-export function TruckSprite({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor }: Props) {
+export function TruckSprite({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1 }: Props) {
   const up = facing === 'up'
   const bodyX = x + w * 0.05
   const bodyW = w * 0.9
@@ -96,7 +98,13 @@ export function TruckSprite({ x, y, w, h, facing, blocks, hidden, done, locked, 
         groups.map((g) => {
           const y0 = Math.min(slotY(g.from), slotY(g.to))
           const y1 = Math.max(slotY(g.from), slotY(g.to)) + slotH
-          return <Block3D key={g.from} x={bedX + 2} y={y0 + 1.5} w={bedW - 4} h={y1 - y0 - 3} color={g.color} hidden={g.hidden} />
+          const landed = settleFrom >= 0 && g.to >= settleFrom
+          return (
+            // a new key restarts the settle animation each time more cubes land in this group
+            <g key={landed ? `${g.from}-${blocks.length}` : g.from} className={landed ? 'cc-settle' : undefined}>
+              <Block3D x={bedX + 2} y={y0 + 1.5} w={bedW - 4} h={y1 - y0 - 3} color={g.color} hidden={g.hidden} />
+            </g>
+          )
         })}
       {done && (
         // finished: an empty bed with a tick, like the reference

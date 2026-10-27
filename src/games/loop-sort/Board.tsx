@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { useSettings } from '../../features/settings/SettingsContext'
 import { BLOCK_NAMES, BlockGradients } from './art/Block3D'
 import { CubeStream } from './art/CubeStream'
@@ -40,6 +40,10 @@ interface TruckButtonProps {
 
 /** One tappable truck. Memoised: it only re-renders when its own cargo or state changes. */
 const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked, hidden, shake, highlight, justAdded, onTruck }: TruckButtonProps) {
+  // remember how many cubes the truck held, so cubes that just landed can play the settle animation
+  const [seen, setSeen] = useState({ blocks: t.blocks, grewFrom: -1 })
+  if (seen.blocks !== t.blocks) setSeen({ blocks: t.blocks, grewFrom: t.blocks.length > seen.blocks.length ? seen.blocks.length : -1 })
+  const grewFrom = seen.grewFrom
   if (t.inactive) {
     // free parking spot for the Extra Truck ability
     return (
@@ -85,7 +89,10 @@ const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked
           className="motion-safe:animate-pulse"
         />
       )}
-      <TruckSprite {...spot} blocks={t.blocks} hidden={hidden} done={t.done} locked={locked} lockColor={t.lock} />
+      {/* inner group so the tap press doesn't fight the shake/pop animations on the outer one */}
+      <g className="cc-truck">
+        <TruckSprite {...spot} blocks={t.blocks} hidden={hidden} done={t.done} locked={locked} lockColor={t.lock} settleFrom={grewFrom} />
+      </g>
     </g>
   )
 })

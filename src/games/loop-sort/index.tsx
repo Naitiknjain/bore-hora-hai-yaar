@@ -34,7 +34,8 @@ import { canShuffle, conveyorLoad, nextSpareDock, tick, type LevelDef, type Loop
 import { AbilityButton, ChunkyButton, HudPill, Popup, RoundIconButton } from './ui'
 
 const LEVELS = levelsData as LevelDef[]
-const TICK_MS = 110
+// one belt step; ~170ms gives the reference's calm pace (about 6 s per lap on level 1)
+const TICK_MS = 170
 
 type Screen = 'home' | 'levels' | 'play'
 

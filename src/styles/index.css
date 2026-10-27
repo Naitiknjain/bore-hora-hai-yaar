@@ -112,6 +112,28 @@ html[data-reduced-motion='on'] *::after {
   background-size: 18px 18px;
 }
 
+/* Chakkar Cubes: a tapped truck presses down a little, like a toy button */
+.cc-truck {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.12s ease-out;
+}
+.cc-truck:active {
+  transform: scale(0.95);
+}
+
+/* cubes landing in a truck drop in and squash slightly before settling */
+@keyframes cc-settle {
+  0% { transform: translateY(-5px) scaleY(1.06); }
+  60% { transform: translateY(1px) scaleY(0.96); }
+  100% { transform: translateY(0) scaleY(1); }
+}
+.cc-settle {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: cc-settle 0.28s ease-out;
+}
+
 /* Chakkar Cubes: confetti that bursts once from a truck when it is completed */
 @keyframes cc-confetti {
   from { transform: translate(0, 0) rotate(0deg); opacity: 1; }
