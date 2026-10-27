@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePlayer } from '../../features/player/PlayerContext'
 import { uuid } from '../../lib/random'
 import { readJSON, writeJSON } from '../../lib/storage'
-import { ApiError, backendConfigured, rpc } from '../../lib/supabase'
+import { backendConfigured, rpc } from '../../lib/supabase'
 import type { AbilityId } from './config'
 import { difficultyOf } from './logic'
 
@@ -120,9 +120,9 @@ export function useLoopWallet(completed: number[], pendingResults: number, admin
           publish(fromServer(res))
           if (!readJSON<WalletEvent[]>(walletQueueKey(key), []).length) break
         }
-      } catch (err) {
-        // offline: keep the queue and the optimistic view; anything else is shown as the last known wallet
-        if (!(err instanceof ApiError)) throw err
+      } catch {
+        // offline or the server refused: keep the queue and show the last known wallet; the next
+        // flush (reconnect, next level, next booster) tries again
       }
     })()
     inflight.current = run
