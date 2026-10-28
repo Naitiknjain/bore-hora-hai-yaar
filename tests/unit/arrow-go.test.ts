@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { blocker, canRemove, depth, exitRay, generateLevel, headDir, pictureFor, solve, TOTAL_LEVELS, type Arrow } from '../../src/games/arrow-go/logic'
+import { blocker, canRemove, depth, difficulty, exitRay, generateLevel, getLevel, headDir, pictureFor, removableArrows, solve, TOTAL_LEVELS, type Arrow } from '../../src/games/arrow-go/logic'
+import shipped from '../../src/games/arrow-go/levels.json'
 import { PICTURES, rasterise } from '../../src/games/arrow-go/pictures'
 
 const arrow = (id: number, cells: [number, number][]): Arrow => ({ id, color: '#fff', cells: cells.map(([x, y]) => ({ x, y })) })
@@ -41,7 +42,7 @@ describe('arrow go rules', () => {
 describe('arrow go levels', () => {
   it(`generates ${TOTAL_LEVELS} deterministic, solvable picture levels that get bigger and harder`, () => {
     for (let n = 1; n <= TOTAL_LEVELS; n += 1) {
-      const l = generateLevel(n)
+      const l = getLevel(n)
       expect(l.arrows.length).toBeGreaterThan(1)
       expect(solve(l.arrows, l.width, l.height)).not.toBeNull()
       expect(l.picture.name).toBe(pictureFor(n).name)
@@ -59,10 +60,27 @@ describe('arrow go levels', () => {
       expect(seen.size / mask.size).toBeGreaterThanOrEqual(0.88)
       if (n >= 15) expect(depth(l.arrows, l.width, l.height)).toBeGreaterThanOrEqual(3)
     }
-    const first = generateLevel(1)
-    const last = generateLevel(TOTAL_LEVELS)
+    const first = getLevel(1)
+    const last = getLevel(TOTAL_LEVELS)
     expect(last.width * last.height).toBeGreaterThan(first.width * first.height * 3)
     expect(generateLevel(7)).toEqual(generateLevel(7))
+  })
+
+  it('ships all levels, and later levels are hard: few free arrows at the start and long chains', () => {
+    expect(shipped).toHaveLength(TOTAL_LEVELS)
+    let over = 0
+    for (let n = 1; n <= TOTAL_LEVELS; n += 1) {
+      const l = getLevel(n)
+      const t = difficulty(n)
+      expect(depth(l.arrows, l.width, l.height), `level ${n}`).toBeGreaterThanOrEqual(t.minDepth)
+      const free = removableArrows(l.arrows, l.width, l.height).length
+      if (free > t.maxFree) over += 1
+      expect(free, `level ${n}`).toBeLessThanOrEqual(t.maxFree + 2)
+    }
+    // the search reaches the free-arrow target on (nearly) every level
+    expect(over).toBeLessThanOrEqual(2)
+    // levels 46+ start with at most a handful of arrows that can move
+    expect(removableArrows(getLevel(60).arrows, getLevel(60).width, getLevel(60).height).length).toBeLessThanOrEqual(3)
   })
 
   it('cycles through 30 different pictures', () => {

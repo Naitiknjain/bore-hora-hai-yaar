@@ -1,4 +1,5 @@
 import { createRng, shuffle, type Rng } from '../../lib/random'
+import levelsData from './levels.json'
 import { PICTURES, rasterise, type Picture } from './pictures'
 
 /**
@@ -72,7 +73,15 @@ export function blocker(a: Arrow, arrows: Arrow[], width: number, height: number
 export const canRemove = (a: Arrow, arrows: Arrow[], width: number, height: number) => blocker(a, arrows, width, height) === null
 
 export function removableArrows(arrows: Arrow[], width: number, height: number): Arrow[] {
-  return arrows.filter((a) => canRemove(a, arrows, width, height))
+  // one map of the board for all arrows (the level generator calls this a lot)
+  const taken = new Uint8Array(width * height)
+  for (const a of arrows) for (const c of a.cells) taken[c.y * width + c.x] = 1
+  return arrows.filter((a) => {
+    const v = VEC[headDir(a)]
+    const h = a.cells[a.cells.length - 1]
+    for (let x = h.x + v.x, y = h.y + v.y; x >= 0 && y >= 0 && x < width && y < height; x += v.x, y += v.y) if (taken[y * width + x]) return false
+    return true
+  })
 }
 
 /**
@@ -112,11 +121,11 @@ export function pictureFor(n: number): Picture {
 
 export function levelSize(n: number): { width: number; height: number; maxLen: number } {
   const t = Math.min(1, (n - 1) / (TOTAL_LEVELS - 1))
-  const long = Math.round(9 + t * 13) // 9 .. 22 cells along the picture's long side
+  const long = Math.round(9 + t * 15) // 9 .. 24 cells along the picture's long side
   const { aspect } = pictureFor(n)
   const width = aspect >= 1 ? long : Math.max(5, Math.round(long * aspect))
   const height = aspect >= 1 ? Math.max(5, Math.round(long / aspect)) : long
-  const maxLen = Math.round(3 + t * 5) // 3 .. 8: many arrows make a dense picture
+  const maxLen = Math.round(3 + t * 7) // 3 .. 10: long, winding arrows are harder to read
   return { width, height, maxLen }
 }
 
@@ -161,20 +170,96 @@ function stuckArrows(arrows: Arrow[], width: number, height: number): Arrow[] {
 const adjacent = (a: Cell, b: Cell) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1
 
 /**
+ * How hard level n must be: at most `maxFree` arrows free at the start, and at least `minDepth`
+ * rounds of removal in the right order (the reference's harder tiers: long chains, few free moves).
+ */
+export function difficulty(n: number): { maxFree: number; minDepth: number } {
+  if (n <= 5) return { maxFree: Infinity, minDepth: 1 }
+  if (n <= 15) return { maxFree: 6, minDepth: 3 }
+  if (n <= 30) return { maxFree: 4, minDepth: 5 }
+  if (n <= 45) return { maxFree: 3, minDepth: 7 }
+  return { maxFree: 3, minDepth: 9 }
+}
+
+/** Lower is harder: free arrows at the start beyond the target, and missing removal rounds. */
+function shortfall(arrows: Arrow[], width: number, height: number, target: { maxFree: number; minDepth: number }) {
+  const free = removableArrows(arrows, width, height).length
+  return Math.max(0, free - target.maxFree) * 3 + Math.max(0, target.minDepth - depth(arrows, width, height))
+}
+
+/**
+ * Tightens a solvable board towards the level's target with two moves, always keeping it solvable:
+ *  - turn a free arrow round, so it points into the picture and has to wait for others
+ *  - join a free arrow onto the arrow whose tail its head touches, so it leaves with that arrow
+ * Each round takes the move that helps most (steepest descent) until the target is met or nothing helps.
+ */
+function tighten(arrows: Arrow[], width: number, height: number, target: { maxFree: number; minDepth: number }, maxLen: number, rng: Rng, effort: number): Arrow[] {
+  let best = arrows
+  let score = shortfall(best, width, height, target)
+  let current = best
+  let currentScore = score
+  for (let round = 0; round < 160 * effort && score > 0; round += 1) {
+    const free = removableArrows(current, width, height)
+    const moves: Arrow[][] = []
+    for (const a of free) {
+      moves.push(current.map((x) => (x.id === a.id ? { ...x, cells: x.cells.slice().reverse() } : x)))
+      const head = a.cells[a.cells.length - 1]
+      for (const host of current) {
+        if (host.id === a.id || host.cells.length + 1 > maxLen + 6) continue
+        if (adjacent(head, host.cells[0])) {
+          // join the whole arrow onto the neighbour's tail, or just hand it the head cell
+          if (a.cells.length + host.cells.length <= maxLen + 6) moves.push(current.filter((x) => x.id !== a.id).map((x) => (x.id === host.id ? { ...x, cells: [...a.cells, ...x.cells] } : x)))
+          if (a.cells.length >= 3) moves.push(current.map((x) => (x.id === a.id ? { ...x, cells: x.cells.slice(0, -1) } : x.id === host.id ? { ...x, cells: [head, ...x.cells] } : x)))
+        }
+        // or hand the head cell to a neighbour's head end (that neighbour's head moves one cell)
+        if (a.cells.length >= 3 && adjacent(head, host.cells[host.cells.length - 1])) {
+          moves.push(current.map((x) => (x.id === a.id ? { ...x, cells: x.cells.slice(0, -1) } : x.id === host.id ? { ...x, cells: [...x.cells, head] } : x)))
+        }
+      }
+    }
+    // a couple of random turns elsewhere can open deeper chains
+    for (let k = 0; k < 3 && current.length; k += 1) {
+      const a = current[Math.floor(rng() * current.length)]
+      moves.push(current.map((x) => (x.id === a.id ? { ...x, cells: x.cells.slice().reverse() } : x)))
+    }
+    // the best move; when nothing improves, a sideways move (no worse) walks out of dead ends
+    let pick: Arrow[] | null = null
+    let pickScore = Infinity
+    for (const m of shuffle(rng, moves)) {
+      if (stuckArrows(m, width, height).length) continue
+      const sc = shortfall(m, width, height, target)
+      if (sc < pickScore) {
+        pick = m
+        pickScore = sc
+      }
+    }
+    if (!pick || pickScore > currentScore) break
+    current = pick
+    currentScore = pickScore
+    if (currentScore < score) {
+      best = current
+      score = currentScore
+    }
+  }
+  return best
+}
+
+/**
  * Deterministic, original level generator: the level's picture is rasterised and packed densely with
  * winding arrows, then deadlocks are repaired (reverse, split, or as a last resort remove an arrow)
  * until greedy removal clears the board. Every level is verified solvable.
  */
-export function generateLevel(n: number): Level {
+export function generateLevel(n: number, effort = 1): Level {
   const picture = pictureFor(n)
   const { width, height, maxLen } = levelSize(n)
   const grid = rasterise(picture, width, height)
   const mask: Cell[] = []
   for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) if (grid[y][x]) mask.push({ x, y })
   const inMask = new Set(mask.map(key))
-  const minDepth = n < 4 ? 1 : n < 15 ? 2 : n < 35 ? 3 : 4
+  const target = difficulty(n)
+  let fallback: { arrows: Arrow[]; score: number } | null = null
 
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  for (let attempt = 0; attempt < Math.max(80, 24 * effort + 1); attempt += 1) {
     const rng = createRng(n * 7919 + attempt * 104729 + 17)
     const occupied = new Set<string>()
     let arrows: Arrow[] = []
@@ -225,16 +310,47 @@ export function generateLevel(n: number): Level {
     }
     if (!ok) continue
     const covered = arrows.reduce((sum, a) => sum + a.cells.length, 0)
-    if (covered < mask.length * 0.88 || arrows.length < 2 || depth(arrows, width, height) < minDepth) continue
+    if (covered < mask.length * 0.88 || arrows.length < 2) continue
+    arrows = tighten(arrows, width, height, target, maxLen, rng, effort)
+    const score = shortfall(arrows, width, height, target)
+    if (score > 0) {
+      // keep the hardest board found in case no attempt reaches the target
+      if (!fallback || score < fallback.score) fallback = { arrows, score }
+      if (attempt < 24 * effort) continue
+    }
+    return finish(arrows)
+  }
+  if (fallback) return finish(fallback.arrows)
+  throw new Error(`could not generate level ${n}`)
+
+  function finish(list: Arrow[]): Level {
     // stable ids and colours after repair
-    arrows = arrows.map((a, i) => ({ ...a, id: i, color: NEON[i % NEON.length] }))
+    const arrows = list.map((a, i) => ({ ...a, id: i, color: NEON[i % NEON.length] }))
     return { number: n, width, height, arrows, picture: { name: picture.name, color: picture.color }, mask }
   }
-  throw new Error(`could not generate level ${n}`)
+}
+
+/** Compact form for the shipped levels file: each arrow as a flat list of x, y pairs (tail to head). */
+export type PackedLevel = { n: number; w: number; h: number; a: number[][] }
+
+export const packLevel = (l: Level): PackedLevel => ({ n: l.number, w: l.width, h: l.height, a: l.arrows.map((ar) => ar.cells.flatMap((c) => [c.x, c.y])) })
+
+/** Rebuilds a shipped level: the picture and its mask come from the level number and size. */
+export function unpackLevel(p: PackedLevel): Level {
+  const picture = pictureFor(p.n)
+  const grid = rasterise(picture, p.w, p.h)
+  const mask: Cell[] = []
+  for (let y = 0; y < p.h; y += 1) for (let x = 0; x < p.w; x += 1) if (grid[y][x]) mask.push({ x, y })
+  const arrows = p.a.map((flat, i) => ({ id: i, color: NEON[i % NEON.length], cells: Array.from({ length: flat.length / 2 }, (_, k) => ({ x: flat[2 * k], y: flat[2 * k + 1] })) }))
+  return { number: p.n, width: p.w, height: p.h, arrows, picture: { name: picture.name, color: picture.color }, mask }
 }
 
 const cache = new Map<number, Level>()
+/** Shipped levels (scripts/generate-arrow-levels.ts searches hard for them); generated live as a fallback. */
 export function getLevel(n: number): Level {
-  if (!cache.has(n)) cache.set(n, generateLevel(n))
+  if (!cache.has(n)) {
+    const packed = (levelsData as PackedLevel[])[n - 1]
+    cache.set(n, packed ? unpackLevel(packed) : generateLevel(n))
+  }
   return cache.get(n)!
 }
