@@ -47,6 +47,10 @@ export const CanvasStage = forwardRef<CanvasHandle, Props>(function CanvasStage(
     element: () => canvas.current,
     toLogical: (clientX, clientY) => {
       const rect = canvas.current!.getBoundingClientRect()
+      // a game turned sideways by the page (rotated 90deg clockwise): its x runs down the screen, its y right-to-left
+      if (canvas.current!.closest('[data-rotated]')) {
+        return { x: ((clientY - rect.top) / rect.height) * width, y: ((rect.right - clientX) / rect.width) * height }
+      }
       return { x: ((clientX - rect.left) / rect.width) * width, y: ((clientY - rect.top) / rect.height) * height }
     },
   }))

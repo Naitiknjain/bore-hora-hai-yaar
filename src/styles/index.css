@@ -1,7 +1,15 @@
 @import 'tailwindcss';
 
-/* Short landscape screens (phones held sideways): games put controls and stats beside the board instead of above/below it. */
-@custom-variant short (@media (orientation: landscape) and (max-height: 520px));
+/* Short landscape screens (phones held sideways, or a game the page turned sideways in fullscreen): games put
+   controls and stats beside the board instead of above/below it. */
+@custom-variant short {
+  @media (orientation: landscape) and (max-height: 520px) {
+    @slot;
+  }
+  :where([data-rotated]) & {
+    @slot;
+  }
+}
 
 @theme {
   --font-display: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;

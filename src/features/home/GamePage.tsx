@@ -77,13 +77,28 @@ export function GamePage() {
       <div
         ref={root}
         data-fullscreen={fullscreen.active || undefined}
+        data-rotated={fullscreen.rotated || undefined}
         className={`flex min-h-0 flex-1 flex-col bg-ink-950 ${
-          fullscreen.immersive ? 'fixed inset-0 z-[60] px-3 pt-[max(0.5rem,env(safe-area-inset-top))]' : ''
+          fullscreen.rotated
+            ? 'fixed left-[100dvw] top-0 z-[60] h-[100dvw] w-[100dvh] origin-top-left rotate-90 px-3 pt-2'
+            : fullscreen.immersive
+              ? 'fixed inset-0 z-[60] px-3 pt-[max(0.5rem,env(safe-area-inset-top))]'
+              : ''
         } ${fullscreen.native ? 'px-3 pt-[max(0.5rem,env(safe-area-inset-top))]' : ''}`}
-        style={{
-          // the host badge is outside the page in real fullscreen, so only reserve room for it otherwise
-          paddingBottom: badge && !fullscreen.native ? `max(${BADGE_SPACE}, env(safe-area-inset-bottom))` : 'max(0.75rem, env(safe-area-inset-bottom))',
-        }}
+        style={
+          fullscreen.rotated
+            ? {
+                // turned sideways the host badge (bottom-right of the phone) lands on the right end of the game,
+                // so the room for it moves there; the phone's notch is now on the left
+                paddingBottom: '0.75rem',
+                paddingLeft: 'max(0.75rem, env(safe-area-inset-top))',
+                paddingRight: badge ? BADGE_SPACE : '0.75rem',
+              }
+            : {
+                // the host badge is outside the page in real fullscreen, so only reserve room for it otherwise
+                paddingBottom: badge && !fullscreen.native ? `max(${BADGE_SPACE}, env(safe-area-inset-bottom))` : 'max(0.75rem, env(safe-area-inset-bottom))',
+              }
+        }
       >
       <div className="mb-2 flex shrink-0 items-center gap-2 short:mb-1">
         <Link to="/games" className={headerBtn} aria-label="Back to all games">

@@ -27,7 +27,8 @@ export function useFitSize(aspect: number, maxHeight = '72dvh') {
     const el = box.current
     if (!el) return
     const measure = () => {
-      const r = el.getBoundingClientRect()
+      // layout size, not the on-screen box: the two differ when the page turns a game sideways
+      const r = { width: el.clientWidth, height: el.clientHeight }
       let availH = r.height
       if (!inSizedFlex(el) || availH < 80) {
         // not inside a sized play area: behave like a normal responsive block
@@ -63,8 +64,7 @@ export function useBoxSize() {
   useLayoutEffect(() => {
     if (!el) return
     const measure = () => {
-      const r = el.getBoundingClientRect()
-      const next = { w: Math.floor(r.width), h: Math.floor(r.height) }
+      const next = { w: el.clientWidth, h: el.clientHeight }
       setRect((s) => (s && s.w === next.w && s.h === next.h ? s : next))
     }
     measure()

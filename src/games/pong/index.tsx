@@ -254,7 +254,7 @@ export default function Pong() {
       >
         <PauseOverlay open={paused} onResume={() => setPaused(false)} onRestart={start} onHome={() => navigate('/games')} />
       </CanvasStage>
-      <p className="mt-2 shrink-0 text-center text-sm text-ink-400 landscape:hidden">Rotate your phone sideways (or tap fullscreen) for a bigger table.</p>
+      <p className="mt-2 shrink-0 text-center text-sm text-ink-400 landscape:hidden short:hidden">Rotate your phone sideways (or tap fullscreen) for a bigger table.</p>
     </div>
   )
 }
