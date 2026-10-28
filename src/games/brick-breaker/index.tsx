@@ -11,9 +11,15 @@ import { useResults } from '../../hooks/useResults'
 import { sfx } from '../../lib/sound'
 import type { StoredResult } from '../../types'
 import {
-  BALL_R, BRICK_H, BRICK_W, buildWall, clampPaddle, H, launch, PADDLE_H, PADDLE_W, PADDLE_Y, START_LIVES, stepBall, W, WALLS,
-  type Ball, type Brick,
+  atPace, BALL_R, BRICK_H, BRICK_W, buildWall, clampPaddle, DROP_R, H, launch, PADDLE_H, PADDLE_W, PADDLE_Y, splitBalls, START_LIVES, stepBall, stepDrops, W,
+  WALLS, WIDE_FACTOR, WIDE_SECONDS, type Ball, type Brick, type Drop, type Power,
 } from './logic'
+
+const POWER_LOOK: Record<Power, { color: string; glyph: string; name: string }> = {
+  multi: { color: '#3ee08f', glyph: '×3', name: 'Triple ball' },
+  wide: { color: '#4cc9f0', glyph: '⟷', name: 'Wide paddle' },
+  blast: { color: '#ff8a3d', glyph: '⚡', name: 'Line blast' },
+}
 
 type Phase = 'menu' | 'playing' | 'over'
 
@@ -25,7 +31,16 @@ export default function BrickBreaker() {
   const { beginRun, finishRun } = useResultRecorder()
   const stage = useRef<CanvasHandle>(null)
   const paddleX = useRef(W / 2)
-  const ball = useRef<Ball | null>(null) // null = resting on the paddle, waiting for launch
+  // no balls = one resting on the paddle, waiting for launch
+  const balls = useRef<Ball[]>([])
+  const drops = useRef<Drop[]>([])
+  /** seconds this wall has been in play (the ball speeds up a little over time) */
+  const wallTime = useRef(0)
+  /** seconds of wide paddle left */
+  const wideLeft = useRef(0)
+  /** the next brick hit takes its whole row */
+  const blastReady = useRef(false)
+  const [power, setPower] = useState<{ wide: number; blast: boolean }>({ wide: 0, blast: false })
   const bricks = useRef<Brick[]>(buildWall(0))
   const keys = useRef(new Set<string>())
   const touchDir = useRef(0)
@@ -45,7 +60,7 @@ export default function BrickBreaker() {
 
   function start() {
     bricks.current = buildWall(0)
-    ball.current = null
+    resetPowers()
     paddleX.current = W / 2
     scoreRef.current = 0
     livesRef.current = START_LIVES
@@ -61,11 +76,30 @@ export default function BrickBreaker() {
     beginRun('classic')
   }
 
+  function resetPowers() {
+    balls.current = []
+    drops.current = []
+    wallTime.current = 0
+    wideLeft.current = 0
+    blastReady.current = false
+    setPower({ wide: 0, blast: false })
+  }
+
+  const paddleW = () => (wideLeft.current > 0 ? PADDLE_W * WIDE_FACTOR : PADDLE_W)
+
   function fire() {
-    if (!ball.current && phase === 'playing' && !paused) {
-      ball.current = launch(paddleX.current, levelRef.current)
+    if (!balls.current.length && phase === 'playing' && !paused) {
+      balls.current = [launch(paddleX.current, levelRef.current)]
       sfx.jump()
     }
+  }
+
+  function catchPower(p: Power) {
+    sfx.match()
+    vibrate(30)
+    if (p === 'multi') balls.current = splitBalls(balls.current.length ? balls.current : [launch(paddleX.current, levelRef.current)])
+    if (p === 'wide') wideLeft.current = WIDE_SECONDS
+    if (p === 'blast') blastReady.current = true
   }
 
   function end(didWin: boolean) {
@@ -81,23 +115,50 @@ export default function BrickBreaker() {
   useGameLoop((dt) => {
     if (ended.current) return
     const dir = (keys.current.has('arrowright') || keys.current.has('d') ? 1 : 0) - (keys.current.has('arrowleft') || keys.current.has('a') ? 1 : 0) + touchDir.current
-    if (dir) paddleX.current = clampPaddle(paddleX.current + dir * 520 * dt)
-    if (ball.current) {
-      const res = stepBall(ball.current, bricks.current, paddleX.current, dt)
-      ball.current = res.ball
-      bricks.current = res.bricks
-      if (res.hitBrick) sfx.point()
-      else if (res.hitPaddle) sfx.hit()
-      if (res.gained) {
-        scoreRef.current += res.gained
+    if (wideLeft.current > 0) wideLeft.current = Math.max(0, wideLeft.current - dt)
+    const pw = paddleW()
+    if (dir) paddleX.current = clampPaddle(paddleX.current + dir * 520 * dt, pw)
+    else paddleX.current = clampPaddle(paddleX.current, pw)
+    // capsules keep falling even while the next ball waits on the paddle
+    if (drops.current.length) {
+      const d = stepDrops(drops.current, paddleX.current, pw, dt)
+      drops.current = d.drops
+      d.caught.forEach(catchPower)
+    }
+    if (balls.current.length) {
+      wallTime.current += dt
+      let gained = 0
+      let hitBrick = false
+      let hitPaddle = false
+      const alive: Ball[] = []
+      for (const b of balls.current) {
+        const res = stepBall(atPace(b, levelRef.current, wallTime.current), bricks.current, paddleX.current, dt, { paddleW: pw, blast: blastReady.current })
+        bricks.current = res.bricks
+        gained += res.gained
+        hitBrick ||= res.hitBrick
+        hitPaddle ||= res.hitPaddle
+        if (res.blasted) {
+          blastReady.current = false
+          sfx.crash()
+          vibrate(60)
+        }
+        for (const br of res.broken) if (br.power) drops.current.push({ x: br.x + BRICK_W / 2, y: br.y + BRICK_H / 2, power: br.power })
+        if (!res.lost) alive.push(res.ball)
+      }
+      balls.current = alive
+      if (hitBrick) sfx.point()
+      else if (hitPaddle) sfx.hit()
+      if (gained) {
+        scoreRef.current += gained
         setScore(scoreRef.current)
       }
-      if (res.lost) {
+      // a life is lost only when the last ball falls
+      if (!alive.length) {
         sfx.crash()
         vibrate(100)
         livesRef.current -= 1
         setLives(livesRef.current)
-        ball.current = null
+        drops.current = []
         if (livesRef.current <= 0) {
           draw()
           end(false)
@@ -113,10 +174,13 @@ export default function BrickBreaker() {
         levelRef.current += 1
         setLevel(levelRef.current)
         bricks.current = buildWall(levelRef.current)
-        ball.current = null
+        resetPowers()
         sfx.win()
       }
     }
+    // HUD readout of active powers (only re-renders when it changes)
+    const wide = Math.ceil(wideLeft.current)
+    if (wide !== power.wide || blastReady.current !== power.blast) setPower({ wide, blast: blastReady.current })
     draw()
   }, phase === 'playing' && !paused)
 
@@ -125,6 +189,8 @@ export default function BrickBreaker() {
     if (!ctx) return
     ctx.fillStyle = '#0f1528'
     ctx.fillRect(0, 0, W, H)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
     for (const br of bricks.current) {
       ctx.globalAlpha = br.hp < br.maxHp ? 0.55 : 1
       ctx.fillStyle = br.color
@@ -136,18 +202,49 @@ export default function BrickBreaker() {
         ctx.lineWidth = 2
         ctx.stroke()
       }
+      if (br.power) {
+        // power bricks carry a star: break them to drop a capsule
+        ctx.fillStyle = 'rgba(15,21,40,0.8)'
+        ctx.font = '700 13px Inter, system-ui'
+        ctx.fillText('★', br.x + BRICK_W / 2, br.y + BRICK_H / 2 + 1)
+      }
     }
     ctx.globalAlpha = 1
-    ctx.fillStyle = '#eef0f8'
+    // falling capsules
+    for (const d of drops.current) {
+      const look = POWER_LOOK[d.power]
+      ctx.fillStyle = look.color
+      ctx.beginPath()
+      ctx.roundRect(d.x - DROP_R * 1.5, d.y - DROP_R, DROP_R * 3, DROP_R * 2, DROP_R)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      ctx.fillStyle = '#0f1528'
+      ctx.font = '800 14px Inter, system-ui'
+      ctx.fillText(look.glyph, d.x, d.y + 1)
+    }
+    const pw = paddleW()
+    ctx.fillStyle = wideLeft.current > 0 ? '#bfeeff' : '#eef0f8'
     ctx.beginPath()
-    ctx.roundRect(paddleX.current - PADDLE_W / 2, PADDLE_Y - PADDLE_H / 2, PADDLE_W, PADDLE_H, 7)
+    ctx.roundRect(paddleX.current - pw / 2, PADDLE_Y - PADDLE_H / 2, pw, PADDLE_H, 7)
     ctx.fill()
-    const b = ball.current ?? { x: paddleX.current, y: PADDLE_Y - PADDLE_H / 2 - BALL_R - 1 }
-    ctx.fillStyle = '#ffd23f'
-    ctx.beginPath()
-    ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2)
-    ctx.fill()
-    if (!ball.current) {
+    const shown = balls.current.length ? balls.current : [{ x: paddleX.current, y: PADDLE_Y - PADDLE_H / 2 - BALL_R - 1 }]
+    for (const b of shown) {
+      if (blastReady.current) {
+        // a ready line blast makes the ball glow
+        ctx.fillStyle = 'rgba(255,138,61,0.35)'
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, BALL_R * 2.1, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.fillStyle = blastReady.current ? '#ff8a3d' : '#ffd23f'
+      ctx.beginPath()
+      ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.textBaseline = 'alphabetic'
+    if (!balls.current.length) {
       ctx.fillStyle = 'rgba(238,240,248,0.75)'
       ctx.font = '600 18px Inter, system-ui'
       ctx.textAlign = 'center'
@@ -187,7 +284,7 @@ export default function BrickBreaker() {
 
   const followPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (paused) return
-    if (e.pointerType === 'mouse' || e.buttons || e.type === 'pointerdown') paddleX.current = clampPaddle(stage.current!.toLogical(e.clientX, e.clientY).x)
+    if (e.pointerType === 'mouse' || e.buttons || e.type === 'pointerdown') paddleX.current = clampPaddle(stage.current!.toLogical(e.clientX, e.clientY).x, paddleW())
   }
 
   if (phase === 'menu') {
@@ -198,8 +295,12 @@ export default function BrickBreaker() {
           <ul className="list-disc space-y-1 pl-5">
             <li>Move the paddle with the mouse, ←/→ (A/D), dragging on the board, or the on-screen buttons.</li>
             <li>Space, a click, a tap on the court or Launch serves the ball. Bounce it into the bricks to break them.</li>
-            <li>Outlined bricks need two hits. Clear all {WALLS.length} walls to win.</li>
-            <li>Miss the ball and you lose a life - {START_LIVES} lives in total.</li>
+            <li>Outlined bricks need two hits. Clear all {WALLS.length} walls to win. The ball slowly speeds up the longer a wall lasts.</li>
+            <li>
+              Bricks with a ★ drop a power-up - catch it with the paddle: <b>×3</b> triples your balls, <b>⟷</b> widens the paddle for {WIDE_SECONDS} s,{' '}
+              <b>⚡</b> makes the next brick you hit take its whole row.
+            </li>
+            <li>You lose a life when your last ball falls - {START_LIVES} lives in total.</li>
           </ul>
         }
       />
@@ -246,6 +347,11 @@ export default function BrickBreaker() {
         }}
         onPointerMove={followPointer}
       >
+        {/* active powers, on the court so the HUD never changes size */}
+        <div className="pointer-events-none absolute left-2 top-2 flex gap-1 text-sm font-bold" aria-live="polite">
+          {power.wide > 0 && <span className="rounded-full bg-[#4cc9f0] px-2 py-0.5 text-[#0f1528]" title={POWER_LOOK.wide.name}>⟷ {power.wide}s</span>}
+          {power.blast && <span className="rounded-full bg-[#ff8a3d] px-2 py-0.5 text-[#0f1528]" title={POWER_LOOK.blast.name}>⚡ ready</span>}
+        </div>
         <PauseOverlay open={paused} onResume={() => setPaused(false)} onRestart={start} onHome={() => navigate('/games')} />
       </CanvasStage>
       {showTouchControls && (

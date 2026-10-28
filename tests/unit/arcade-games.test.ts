@@ -106,6 +106,54 @@ describe('brick breaker', () => {
     const r = brick.stepBall({ x: 20, y: brick.H - 5, vx: 0, vy: 400 }, [], brick.W - 40, 0.2)
     expect(r.lost).toBe(true)
   })
+
+  it('the ball speeds up gently over time, at most 30% faster', () => {
+    expect(brick.speedFactor(0)).toBe(1)
+    expect(brick.speedFactor(60)).toBeCloseTo(1.15)
+    expect(brick.speedFactor(1000)).toBe(1.3)
+    const slow = { x: 100, y: 300, vx: 0, vy: -100 }
+    const paced = brick.atPace(slow, 0, 60)
+    expect(Math.hypot(paced.vx, paced.vy)).toBeCloseTo(brick.baseSpeed(0) * 1.15)
+    expect(paced.vy).toBeLessThan(0) // keeps its direction
+  })
+
+  it('some bricks carry power-ups, and a broken power brick is reported so it can drop its capsule', () => {
+    const wall = brick.buildWall(0, createRng(3))
+    const powered = wall.filter((b) => b.power)
+    expect(powered.length).toBeGreaterThan(0)
+    expect(powered.length).toBeLessThan(wall.length / 3)
+    const target = { ...wall[0], power: 'wide' as const }
+    const r = brick.stepBall({ x: target.x + 10, y: target.y + brick.BRICK_H + 12, vx: 0, vy: -300 }, [target], brick.W / 2, 0.1)
+    expect(r.broken).toEqual([target])
+  })
+
+  it('x3 splits every ball into three', () => {
+    const three = brick.splitBalls([{ x: 10, y: 10, vx: 0, vy: -300 }])
+    expect(three).toHaveLength(3)
+    for (const b of three) expect(Math.hypot(b.vx, b.vy)).toBeCloseTo(300)
+    expect(new Set(three.map((b) => Math.round(b.vx))).size).toBe(3)
+  })
+
+  it('a caught capsule gives its power; a wide paddle reaches further', () => {
+    const d = brick.stepDrops([{ x: 240, y: brick.PADDLE_Y - 20, power: 'multi' }], 240, brick.PADDLE_W, 0.1)
+    expect(d.caught).toEqual(['multi'])
+    const missed = brick.stepDrops([{ x: 240 + brick.PADDLE_W * 0.7, y: brick.PADDLE_Y - 20, power: 'wide' }], 240, brick.PADDLE_W, 0.1)
+    expect(missed.caught).toEqual([])
+    const wide = brick.stepDrops([{ x: 240 + brick.PADDLE_W * 0.7, y: brick.PADDLE_Y - 20, power: 'wide' }], 240, brick.PADDLE_W * brick.WIDE_FACTOR, 0.1)
+    expect(wide.caught).toEqual(['wide'])
+  })
+
+  it('line blast clears the whole row of the brick it hits, once', () => {
+    const wall = brick.buildWall(0, () => 0.99)
+    const rowY = wall[0].y
+    const rowCount = wall.filter((b) => b.y === rowY).length
+    // hit the bottom-left brick of the top row from below, through an otherwise empty board
+    const target = wall[0]
+    const r = brick.stepBall({ x: target.x + 10, y: target.y + brick.BRICK_H + 12, vx: 0, vy: -300 }, wall.filter((b) => b.y === rowY), brick.W / 2, 0.1, { blast: true })
+    expect(r.broken).toHaveLength(rowCount)
+    expect(r.bricks).toHaveLength(0)
+    expect(r.blasted).toBe(true)
+  })
 })
 
 describe('udta panchi', () => {
