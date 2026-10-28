@@ -123,15 +123,18 @@ html[data-reduced-motion='on'] *::after {
 }
 
 /* cubes landing in a truck drop in and squash slightly before settling */
+/* a landing block builds up while its small cubes fly in from the belt, then settles with a bounce */
 @keyframes cc-settle {
-  0% { transform: translateY(-5px) scaleY(1.06); }
-  60% { transform: translateY(1px) scaleY(0.96); }
-  100% { transform: translateY(0) scaleY(1); }
+  0% { opacity: 0; transform: translateY(-6px) scale(0.6); }
+  45% { opacity: 0.55; transform: translateY(-5px) scale(0.82); }
+  72% { opacity: 1; transform: translateY(-2px) scale(1.04, 1.07); }
+  86% { transform: translateY(1px) scale(1.02, 0.94); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 .cc-settle {
   transform-box: fill-box;
   transform-origin: center bottom;
-  animation: cc-settle 0.28s ease-out;
+  animation: cc-settle 0.72s ease-out both;
 }
 
 /* Chakkar Cubes: confetti that bursts once from a truck when it is completed */

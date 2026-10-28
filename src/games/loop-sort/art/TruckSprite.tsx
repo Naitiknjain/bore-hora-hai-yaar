@@ -46,12 +46,15 @@ interface Props {
   /** Open (loading) end points towards the belt. */
   facing: 'up' | 'down' | 'left' | 'right'
   blocks: number[]
-  hidden: boolean
+  /** how many cubes at the bottom are face down (hidden-cube levels) */
+  veiled: number
   done: boolean
   locked: boolean
   lockColor?: number
   /** index of the first cube that just landed (plays the settle animation), or -1 */
   settleFrom?: number
+  /** called when the newest landed cube has finished settling */
+  onSettled?: () => void
   /** barrier: striped posts in front of the truck (they sink once it is sorted) */
   barrier?: boolean
   /** covered in ice */
@@ -93,7 +96,7 @@ export function TruckSprite(props: Props) {
   )
 }
 
-function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockColor, settleFrom = -1, barrier, frozen, thawed, tint, keyId, queue, screws, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
+function UprightTruck({ x, y, w, h, facing, blocks, veiled, done, locked, lockColor, settleFrom = -1, onSettled, barrier, frozen, thawed, tint, keyId, queue, screws, turn }: Props & { facing: 'up' | 'down'; turn?: number }) {
   // a coloured truck is painted in its colour; every other truck is lavender
   const paint = tint === undefined ? null : BLOCK_COLORS[tint]
   const up = facing === 'up'
@@ -115,13 +118,15 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
   const slotY = (k: number) => (up ? bedY1 - (k + 1) * slotH : bedY0 + k * slotH)
   const hoodY = up ? y : y + topH - hoodH
 
-  // merge neighbouring visible blocks of the same colour into one long block (display only)
-  const groups: { from: number; to: number; color: number; hidden: boolean }[] = []
+  // merge neighbouring visible blocks of the same colour into one long block (display only); cubes
+  // still landing stay separate until they have settled, so each plays its own animation
+  const groups: { from: number; to: number; color: number; hidden: boolean; landing: boolean }[] = []
   blocks.forEach((c, k) => {
-    const isHidden = hidden && k !== blocks.length - 1
+    const isHidden = k < veiled
+    const landing = settleFrom >= 0 && k >= settleFrom
     const last = groups[groups.length - 1]
-    if (last && !isHidden && !last.hidden && last.color === c && last.to === k - 1) last.to = k
-    else groups.push({ from: k, to: k, color: c, hidden: isHidden })
+    if (last && !landing && !last.landing && !isHidden && !last.hidden && last.color === c && last.to === k - 1) last.to = k
+    else groups.push({ from: k, to: k, color: c, hidden: isHidden, landing })
   })
 
   return (
@@ -142,10 +147,13 @@ function UprightTruck({ x, y, w, h, facing, blocks, hidden, done, locked, lockCo
         groups.map((g) => {
           const y0 = Math.min(slotY(g.from), slotY(g.to))
           const y1 = Math.max(slotY(g.from), slotY(g.to)) + slotH
-          const landed = settleFrom >= 0 && g.to >= settleFrom
           return (
-            // a new key restarts the settle animation each time more cubes land in this group
-            <g key={landed ? `${g.from}-${blocks.length}` : g.from} className={landed ? 'cc-settle' : undefined}>
+            // a landing cube keeps its key while it settles, so cubes landing after it never restart it
+            <g
+              key={g.landing ? `land-${g.from}` : `${g.from}-${g.to}`}
+              className={g.landing ? 'cc-settle' : undefined}
+              onAnimationEnd={g.landing && g.to === blocks.length - 1 ? onSettled : undefined}
+            >
               <Block3D x={bedX + 2} y={y0 + 1.5} w={bedW - 4} h={y1 - y0 - 3} color={g.color} hidden={g.hidden} turn={turn} />
             </g>
           )

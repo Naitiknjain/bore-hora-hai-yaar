@@ -81,6 +81,11 @@ export interface Truck {
   ice?: number
   /** the ice has broken (plays the shatter once) */
   thawed?: boolean
+  /**
+   * Hidden-cube levels: how many cubes at the bottom are still face down. Only the top group is
+   * visible at first; a cube stays revealed once it has been seen, even if more cubes land on it.
+   */
+  veiled?: number
   key?: number
   shutter?: number
   tag?: number
@@ -460,7 +465,15 @@ export const maxCapacity = (s: LoopState) => s.belt.length - 2
  * Builds the starting board. `spareDocks` reserves empty, inactive docks for the Extra Truck
  * ability (they are laid out now so adding a truck never moves the conveyor).
  */
-export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity' | 'style'>, spareDocks = 0): LoopState {
+/** Cubes below the top group of same-coloured cubes (the ones a hidden-cube level keeps face down). */
+export const belowTopGroup = (blocks: number[]) => {
+  if (!blocks.length) return 0
+  let k = blocks.length - 1
+  while (k > 0 && blocks[k - 1] === blocks[blocks.length - 1]) k -= 1
+  return k
+}
+
+export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity' | 'style'> & { hidden?: boolean }, spareDocks = 0): LoopState {
   const spare = Math.max(0, Math.min(spareDocks, MAX_TRUCKS - level.trucks.length))
   const total = level.trucks.length + spare
   const layout = beltLayout(total, level.style, spare)
@@ -469,6 +482,7 @@ export function initialState(level: Pick<LevelDef, 'trucks' | 'capacity' | 'styl
     lock: t.lock,
     done: false,
     pos: layout.truckPos[i],
+    ...(level.hidden ? { veiled: belowTopGroup(t.blocks) } : {}),
     ...(t.barrier ? { barrier: true } : {}),
     ...(t.ice !== undefined ? { ice: t.ice } : {}),
     ...(t.key !== undefined ? { key: t.key } : {}),
@@ -552,6 +566,8 @@ export function tap(s: LoopState, i: number): { state: LoopState; error: TapErro
   const trucks = s.trucks.map((x, k) => {
     if (k !== i) return x
     const next: Truck = { ...x, blocks: left, outgoing: [...(x.outgoing ?? []), ...run.slice().reverse()] }
+    // the group that is now on top turns face up (and stays that way)
+    if (next.veiled !== undefined) next.veiled = Math.min(next.veiled, belowTopGroup(left))
     if (found !== undefined) delete next.key
     if (next.screws) {
       const screws = next.screws.filter((k) => k < left.length)
@@ -561,6 +577,7 @@ export function tap(s: LoopState, i: number): { state: LoopState; error: TapErro
     // a spawner that has been emptied refills with its next group
     if (!left.length && next.queue?.length) {
       next.blocks = next.queue[0].slice()
+      if (next.veiled !== undefined) next.veiled = belowTopGroup(next.blocks)
       if (next.queue.length > 1) next.queue = next.queue.slice(1)
       else delete next.queue
     }
@@ -625,9 +642,14 @@ export function tick(s: LoopState): TickResult {
       // a sorted spawner sends its colour off and refills straight away instead of finishing
       if (full && x.queue?.length) {
         const { queue, ...rest } = x
-        return { ...rest, blocks: queue[0].slice(), ...(queue.length > 1 ? { queue: queue.slice(1) } : {}) }
+        return {
+          ...rest,
+          blocks: queue[0].slice(),
+          ...(x.veiled !== undefined ? { veiled: belowTopGroup(queue[0]) } : {}),
+          ...(queue.length > 1 ? { queue: queue.slice(1) } : {}),
+        }
       }
-      return { ...x, blocks: full ? [] : blocks, done: full || x.done, doneColor: full ? c : x.doneColor }
+      return { ...x, blocks: full ? [] : blocks, done: full || x.done, doneColor: full ? c : x.doneColor, ...(full && x.veiled !== undefined ? { veiled: 0 } : {}) }
     })
     if (full) {
       completed = [...completed, c]
@@ -728,7 +750,10 @@ export function shuffleTruck(s: LoopState, i: number, rand: () => number = Math.
     }
   }
   if (blocks.join() === original.join()) blocks = [...original.slice(1), original[0]] // rotate as a last resort
-  return { ...s, trucks: s.trucks.map((t, k) => (k === i ? { ...t, blocks } : t)) }
+  return {
+    ...s,
+    trucks: s.trucks.map((t, k) => (k === i ? { ...t, blocks, ...(t.veiled !== undefined ? { veiled: Math.min(t.veiled, belowTopGroup(blocks)) } : {}) } : t)),
+  }
 }
 
 /**

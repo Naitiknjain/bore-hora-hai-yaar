@@ -225,7 +225,7 @@ export default function LoopSort() {
   const [levelPage, setLevelPage] = useState<number | null>(null)
   const [confirm, setConfirm] = useState<null | 'restart' | 'leave'>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const { settings, update } = useSettings()
+  const { settings, update, prefersReducedMotion } = useSettings()
   const nextId = useRef(1)
   const idle = useRef(0)
   const recorded = useRef(false)
@@ -233,6 +233,13 @@ export default function LoopSort() {
   attemptRef.current = attempt
 
   const status = attempt?.status
+  // the win card waits a moment so the last cubes can land and the truck can show its tick and confetti
+  const [winShown, setWinShown] = useState<Attempt | null>(null)
+  useEffect(() => {
+    if (status !== 'won' || !attempt) return
+    const t = window.setTimeout(() => setWinShown(attempt), prefersReducedMotion ? 0 : 1300)
+    return () => window.clearTimeout(t)
+  }, [status, attempt, prefersReducedMotion])
   const inPlay = screen === 'play' && (status === 'playing' || status === 'out-of-space' || status === 'stuck')
   const started = !!attempt && (attempt.history.length > 0 || Object.values(attempt.used).some((n) => n > 0) || attempt.continuesUsed > 0)
   // leaving a started, unfinished level counts as a failed attempt (Normal Mode only)
@@ -728,7 +735,6 @@ export default function LoopSort() {
           <LoopBoard
             state={board}
             items={items}
-            hidden={level.hidden}
             tickMs={TICK_MS}
             shakeTruck={shake}
             highlightTrucks={shuffleTargets}
@@ -747,7 +753,7 @@ export default function LoopSort() {
               </div>
             </Popup>
           )}
-          {status === 'won' && (
+          {status === 'won' && winShown === attempt && (
             <Popup label="Level complete" emoji="🎉" title={`Level ${level.n} done!`}>
               <p className="mt-1 text-sm font-semibold text-[#5b4a9e]">Saare cubes sorted. Shabaash!</p>
               {reward > 0 && (

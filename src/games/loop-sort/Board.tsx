@@ -19,7 +19,6 @@ export interface BeltItem {
 interface Props {
   state: LoopState
   items: BeltItem[]
-  hidden: boolean
   tickMs: number
   shakeTruck: number | null
   highlightTrucks: number[]
@@ -37,7 +36,6 @@ interface TruckButtonProps {
   shut: boolean
   tied: boolean
   carpeted: boolean
-  hidden: boolean
   shake: boolean
   highlight: boolean
   justAdded: boolean
@@ -45,11 +43,23 @@ interface TruckButtonProps {
 }
 
 /** One tappable truck. Memoised: it only re-renders when its own cargo or state changes. */
-const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked, shut, tied, carpeted, hidden, shake, highlight, justAdded, onTruck }: TruckButtonProps) {
+const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked, shut, tied, carpeted, shake, highlight, justAdded, onTruck }: TruckButtonProps) {
   // remember how many cubes the truck held, so cubes that just landed can play the settle animation
-  const [seen, setSeen] = useState({ blocks: t.blocks, grewFrom: -1 })
-  if (seen.blocks !== t.blocks) setSeen({ blocks: t.blocks, grewFrom: t.blocks.length > seen.blocks.length ? seen.blocks.length : -1 })
+  // `src` is the truck's real cargo (to notice changes); `blocks` is what is drawn
+  const [seen, setSeen] = useState({ src: t.blocks, done: t.done, blocks: t.blocks, grewFrom: -1 })
+  if (seen.src !== t.blocks || seen.done !== t.done) {
+    // a truck that has just been completed keeps showing its full stack until the last cube has settled
+    const finished = t.done && !seen.done
+    const shown = finished ? [...seen.blocks, t.doneColor ?? 0].slice(-4) : t.blocks
+    // a landing is exactly one more cube; bigger jumps (new level, undo, restart) just appear
+    const grew = shown.length === seen.blocks.length + 1
+    // cubes landing one after another settle together: the landing range starts at the first of them
+    const from = grew ? (seen.grewFrom >= 0 ? Math.min(seen.grewFrom, seen.blocks.length) : seen.blocks.length) : -1
+    setSeen({ src: t.blocks, done: t.done, blocks: shown, grewFrom: from >= shown.length ? -1 : from })
+  }
   const grewFrom = seen.grewFrom
+  const finishing = t.done && grewFrom >= 0
+  const settled = useCallback(() => setSeen((s) => ({ ...s, grewFrom: -1 })), [])
   if (t.inactive) {
     // free parking spot for the Extra Truck ability
     return (
@@ -104,7 +114,7 @@ const TruckButton = memo(function TruckButton({ index: i, truck: t, spot, locked
       )}
       {/* inner group so the tap press doesn't fight the shake/pop animations on the outer one */}
       <g className="cc-truck">
-        <TruckSprite {...spot} blocks={t.blocks} hidden={hidden} done={t.done} locked={locked} lockColor={t.lock} settleFrom={grewFrom} barrier={t.barrier} frozen={frozen} thawed={t.thawed} tint={t.tag} keyId={t.key} queue={t.queue} screws={t.screws} />
+        <TruckSprite {...spot} blocks={finishing ? seen.blocks : t.blocks} veiled={t.veiled ?? 0} done={t.done && !finishing} locked={locked} lockColor={t.lock} settleFrom={grewFrom} onSettled={settled} barrier={t.barrier} frozen={frozen} thawed={t.thawed} tint={t.tag} keyId={t.key} queue={t.queue} screws={t.screws} />
       </g>
     </g>
   )
@@ -286,7 +296,7 @@ const BoardBase = memo(function BoardBase({
   )
 })
 
-export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightTrucks, justAdded, full, onTruck }: Props) {
+export function LoopBoard({ state, items, tickMs, shakeTruck, highlightTrucks, justAdded, full, onTruck }: Props) {
   // geometry depends only on the number of docks (cached), so static layers never re-render
   const b = useMemo(() => boardLayout(state.trucks.length, state.style, state.spares), [state.trucks.length, state.style, state.spares])
   const svgRef = useRef<SVGSVGElement>(null)
@@ -316,7 +326,6 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
             shut={isShut(state, t)}
             tied={isTied(state, t)}
             carpeted={isCarpeted(state, t)}
-            hidden={hidden}
             shake={shakeTruck === i}
             highlight={highlightTrucks.includes(i)}
             justAdded={justAdded === i}
@@ -334,6 +343,7 @@ export function LoopBoard({ state, items, hidden, tickMs, shakeTruck, highlightT
         height={b.height}
         points={b.points}
         trucks={b.trucks}
+        fills={state.trucks.map((t) => t.blocks.length)}
         tunnel={b.tunnel}
         items={items}
         tickMs={tickMs}

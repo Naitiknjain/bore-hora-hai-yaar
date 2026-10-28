@@ -482,3 +482,27 @@ describe('campaign', () => {
     expect(Math.max(...LEVELS.slice(0, 60).flatMap((l) => l.trucks.flatMap((t) => t.blocks)))).toBeLessThan(8)
   })
 })
+
+describe('hidden cubes', () => {
+  it('only the top group starts face up, and the whole same-colour group shows', () => {
+    const s = initialState({ ...lvl([[1, 2, 3, 3], [4, 4, 4, 4]], 6), hidden: true })
+    expect(s.trucks[0].veiled).toBe(2) // 1 and 2 face down, both 3s visible
+    expect(s.trucks[1].veiled).toBe(0)
+  })
+
+  it('a revealed cube stays revealed when more cubes land on top of it', () => {
+    let s = initialState({ ...lvl([[1, 2, 3], [3], []], 6), hidden: true })
+    s = settle(tap(s, 0).state) // the 3 leaves: the 2 below turns face up
+    expect(s.trucks[0].blocks).toEqual([1, 2])
+    expect(s.trucks[0].veiled).toBe(1)
+    // a 2 arrives on it later: the first 2 does not hide again
+    s = { ...s, trucks: s.trucks.map((t, i) => (i === 0 ? { ...t, blocks: [1, 2, 2] } : t)) }
+    expect(s.trucks[0].veiled).toBe(1)
+    s = settle(tap(s, 0).state) // both 2s leave: the 1 turns face up
+    expect(s.trucks[0].veiled).toBe(0)
+  })
+
+  it('levels without hidden cubes show everything', () => {
+    expect(initialState(lvl([[1, 2, 3]], 6)).trucks[0].veiled).toBeUndefined()
+  })
+})

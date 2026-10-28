@@ -23,6 +23,8 @@ interface Props {
   height: number
   points: [number, number][]
   trucks: TruckSpot[]
+  /** cubes in each truck (the slot a landing cube flies to) */
+  fills: number[]
   /** cubes inside this area are in the tunnel and not drawn */
   tunnel?: { x: number; y: number; w: number; h: number }
   items: StreamItem[]
@@ -44,10 +46,17 @@ interface Ghost {
   to: [number, number]
   start: number
   seed: number
+  /** flight time */
+  ms: number
+  /** how high it arcs (board units) */
+  lift: number
 }
 
 const CLUSTER = 40
 const GHOST_MS = 300
+/** cubes landing in a truck fly all the way down to their slot, a little slower than they pour out */
+const LAND_MS = 520
+const LAND_GAP_MS = 55
 /** small cubes per conveyor cube when it pours out of / into a truck */
 const TRICKLE = 6
 const TRICKLE_GAP_MS = 40
@@ -148,15 +157,15 @@ function drawBar(ctx: CanvasRenderingContext2D, at: At, from: number, to: number
   ctx.globalAlpha = 1
 }
 
-export function CubeStream({ svgRef, width, height, points, trucks, tunnel, items, tickMs, reducedMotion }: Props) {
+export function CubeStream({ svgRef, width, height, points, trucks, fills, tunnel, items, tickMs, reducedMotion }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const tracked = useRef(new Map<number, Tracked>())
   const ghosts = useRef<Ghost[]>([])
   const tickAt = useRef(0)
   const frame = useRef(0)
   const scale = useRef({ s: 1, dpr: 1 })
-  const props = useRef({ points, trucks, tunnel, tickMs, reducedMotion })
-  props.current = { points, trucks, tunnel, tickMs, reducedMotion }
+  const props = useRef({ points, trucks, fills, tunnel, tickMs, reducedMotion })
+  props.current = { points, trucks, fills, tunnel, tickMs, reducedMotion }
 
   const draw = useRef<(now: number) => boolean>(() => false)
   draw.current = (now: number) => {
@@ -223,13 +232,21 @@ export function CubeStream({ svgRef, width, height, points, trucks, tunnel, item
     // small cubes pouring between trucks and the belt, sorted top-to-bottom so lower ones overlap upper ones
     const draws: { x: number; y: number; s: number; c: number; a: number }[] = []
     // cubes flying into the truck that picked them up
-    ghosts.current = ghosts.current.filter((g) => now - g.start < GHOST_MS)
+    ghosts.current = ghosts.current.filter((g) => now - g.start < g.ms)
     for (const g of ghosts.current) {
       if (now < g.start) continue
-      const k = (now - g.start) / GHOST_MS
-      const e = k * (2 - k) // ease out: quick start, gentle landing
+      const k = (now - g.start) / g.ms
+      const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2 // ease in-out: lift off, glide, land softly
       const r = clusterOf(g.seed)[0]
-      draws.push({ x: g.from[0] + (g.to[0] - g.from[0]) * e + r.v * 0.25, y: g.from[1] + (g.to[1] - g.from[1]) * e, s: 6.5, c: g.color, a: 1 })
+      // a small hop over the truck's edge, shrinking a little as it drops into the bed
+      const arc = Math.sin(Math.PI * e) * g.lift
+      draws.push({
+        x: g.from[0] + (g.to[0] - g.from[0]) * e + r.v * 0.25 * (1 - e),
+        y: g.from[1] + (g.to[1] - g.from[1]) * e - arc,
+        s: 8 - 1.8 * e,
+        c: g.color,
+        a: k > 0.9 ? (1 - k) * 10 : 1,
+      })
     }
     draws.sort((p, q) => p.y - q.y)
     for (const d of draws) drawCube(ctx, d.x, d.y, d.s, d.c, d.a)
@@ -258,11 +275,16 @@ export function CubeStream({ svgRef, width, height, points, trucks, tunnel, item
     if (!props.current.reducedMotion && continued) {
       for (const [id, old] of prev) {
         if (next.has(id)) continue
-        const spot = props.current.trucks.find((tr) => tr.pos === old.pos || tr.pos === (old.pos + 1) % props.current.points.length)
-        if (!spot) continue
+        const index = props.current.trucks.findIndex((tr) => tr.pos === old.pos || tr.pos === (old.pos + 1) % props.current.points.length)
+        if (index < 0) continue
+        const spot = props.current.trucks[index]
         const from = props.current.points[old.pos]
-        const to = mouthOf(spot, 0.3)
-        for (let i = 0; i < TRICKLE; i += 1) ghosts.current.push({ color: old.color, from, to, start: now + i * TRICKLE_GAP_MS, seed: id * 8 + i })
+        // the slot this cube fills: stacks start at the far end of the bed and grow towards the belt
+        const slot = Math.max(0, (props.current.fills[index] ?? 1) - 1)
+        const to = mouthOf(spot, 0.9 - 0.72 * ((slot + 0.5) / 4))
+        for (let i = 0; i < TRICKLE; i += 1) {
+          ghosts.current.push({ color: old.color, from, to, start: now + i * LAND_GAP_MS, seed: id * 8 + i, ms: LAND_MS, lift: 9 })
+        }
       }
       // a cube just put on the belt pours out of its truck as a trickle of small cubes
       for (const it of items) {
@@ -270,7 +292,9 @@ export function CubeStream({ svgRef, width, height, points, trucks, tunnel, item
         const spot = props.current.trucks.find((tr) => tr.pos === it.pos)
         if (!spot) continue
         const to = props.current.points[it.pos]
-        for (let i = 0; i < TRICKLE; i += 1) ghosts.current.push({ color: it.color, from: mouthOf(spot, 0.05), to, start: now + i * TRICKLE_GAP_MS * 0.6, seed: it.id * 8 + i })
+        for (let i = 0; i < TRICKLE; i += 1) {
+          ghosts.current.push({ color: it.color, from: mouthOf(spot, 0.05), to, start: now + i * TRICKLE_GAP_MS * 0.6, seed: it.id * 8 + i, ms: GHOST_MS, lift: 0 })
+        }
       }
     }
     tracked.current = next
