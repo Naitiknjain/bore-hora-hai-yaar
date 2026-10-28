@@ -197,6 +197,35 @@ describe('dino run', () => {
     for (let i = 0; i < 40; i += 1) d = dino.step(d, 1 / 60, true, rng)
     expect(d.dead).toBe(false)
   })
+
+  it('courses are varied and always passable: an autopilot survives a minute on many seeds', () => {
+    const seen = new Set<string>()
+    for (let seed = 1; seed <= 8; seed += 1) {
+      const rng = createRng(seed)
+      let s = dino.initial()
+      for (let i = 0; i < 60 * 60 && !s.dead; i += 1) {
+        const next = s.obstacles.find((o) => o.x + o.w > dino.DINO_X)
+        let duck = false
+        if (next) {
+          const d = next.x - (dino.DINO_X + dino.STAND.w)
+          if ((next.kind.startsWith('cactus') || next.kind === 'bird-low') && d < s.speed * 0.13 + 12 && d > -next.w) s = dino.jump(s)
+          if (next.kind === 'bird-mid' && d < s.speed * 0.3) duck = true
+        }
+        s = dino.step(s, 1 / 60, duck, rng)
+        for (const o of s.obstacles) seen.add(o.kind + (o.parts?.length ?? ''))
+      }
+      expect(s.dead, `seed ${seed}`).toBe(false)
+    }
+    // single cacti, clusters of several sizes and all three bird heights turn up
+    for (const k of ['cactus-s1', 'cactus-group2', 'cactus-group3', 'bird-low', 'bird-mid', 'bird-high']) expect(seen.has(k), k).toBe(true)
+  })
+
+  it('a cactus cluster is never wider than a jump can clear', () => {
+    const rng = createRng(5)
+    for (const speed of [dino.START_SPEED, 600, dino.MAX_SPEED]) {
+      for (let i = 0; i < 200; i += 1) expect(dino.cactusCluster(rng, 0, dino.jumpLength(speed)).w).toBeLessThanOrEqual(Math.max(24, dino.jumpLength(speed) - 90))
+    }
+  })
 })
 
 describe('typing racer', () => {

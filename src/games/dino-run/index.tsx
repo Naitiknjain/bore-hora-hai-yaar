@@ -96,11 +96,13 @@ export default function DinoRun() {
     for (const o of s.obstacles) {
       if (o.kind.startsWith('cactus')) {
         ctx.fillStyle = '#2b8a57'
-        const parts = o.kind === 'cactus-group' ? 3 : 1
+        // each cactus of a cluster has its own height (older obstacles without parts: 1 or 3 cacti)
+        const heights = o.parts ?? (o.kind === 'cactus-group' ? [o.h - 8, o.h, o.h - 8] : [o.h])
+        const parts = heights.length
         const pw = o.w / parts
         for (let p = 0; p < parts; p += 1) {
           const x = o.x + p * pw
-          const h = o.h - (p === 1 ? 0 : parts > 1 ? 8 : 0)
+          const h = heights[p]
           ctx.beginPath()
           ctx.roundRect(x + pw * 0.25, GROUND_Y - h, pw * 0.5, h, 4)
           ctx.fill()

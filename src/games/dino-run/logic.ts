@@ -19,7 +19,12 @@ export interface Obstacle {
   y: number // top
   w: number
   h: number
+  /** cactus clusters: the height of each cactus, left to right (drawing only) */
+  parts?: number[]
 }
+
+/** Horizontal distance covered during one full jump at a given speed. */
+export const jumpLength = (speed: number) => speed * ((2 * -JUMP_V) / GRAVITY)
 
 export interface DinoState {
   y: number // dino bottom (GROUND_Y when on the ground)
@@ -65,6 +70,55 @@ export function makeObstacle(kind: ObstacleKind, x: number): Obstacle {
   }
 }
 
+/**
+ * The next stretch of the course, starting at `x`: a cactus cluster of 1-4 cacti of random sizes, a
+ * bird at one of three heights (jump / duck / run under), or - later on - a quick double. Every
+ * pattern can be cleared at the current speed. Returns the obstacles and the distance to the next
+ * spawn (pattern width plus a random gap, sometimes a longer breather).
+ */
+export function spawnPattern(rng: Rng, distance: number, speed: number, x: number): { obstacles: Obstacle[]; next: number } {
+  const jump = jumpLength(speed)
+  const birdChance = distance < 1500 ? 0 : Math.min(0.35, 0.12 + distance / 40000)
+  const obstacles: Obstacle[] = []
+  if (rng() < birdChance) {
+    const kind = (['bird-low', 'bird-mid', 'bird-high'] as const)[Math.floor(rng() * 3)]
+    const b = makeObstacle(kind, x)
+    // a little height jitter that never changes how the bird has to be passed
+    obstacles.push({ ...b, y: b.y + Math.round((rng() - 0.5) * (kind === 'bird-high' ? 12 : 6)) })
+  } else {
+    obstacles.push(cactusCluster(rng, x, jump))
+    if (distance > 6000 && rng() < 0.15) {
+      // a quick double: land, then jump straight away
+      const first = obstacles[0]
+      const gapAfterLanding = 40 + speed * (0.1 + rng() * 0.15)
+      obstacles.push(cactusCluster(rng, first.x + jump + gapAfterLanding, jump, 2))
+    }
+  }
+  const last = obstacles[obstacles.length - 1]
+  const width = last.x + last.w - x
+  const breather = rng() < 0.1 ? 1.8 : 1
+  return { obstacles, next: width + speed * (0.7 + rng() * 1.1) * breather }
+}
+
+/** 1-4 cacti side by side, random heights and widths, never wider than a jump can clear. */
+export function cactusCluster(rng: Rng, x: number, jump: number, maxCount = 4): Obstacle {
+  const r = rng()
+  let count = Math.min(maxCount, r < 0.5 ? 1 : r < 0.8 ? 2 : r < 0.95 ? 3 : 4)
+  const widths: number[] = []
+  const heights: number[] = []
+  for (let i = 0; i < 4; i += 1) {
+    widths.push(14 + Math.round(rng() * 10))
+    heights.push(28 + Math.round(rng() * 26))
+  }
+  const room = Math.max(18, jump - 90)
+  while (count > 1 && widths.slice(0, count).reduce((a, b) => a + b, 0) > room) count -= 1
+  const w = widths.slice(0, count).reduce((a, b) => a + b, 0)
+  const parts = heights.slice(0, count)
+  const h = Math.max(...parts)
+  const kind: ObstacleKind = count > 1 ? 'cactus-group' : h > 44 ? 'cactus-l' : 'cactus-s'
+  return { kind, x, y: GROUND_Y - h, w, h, parts }
+}
+
 export function spawnKind(rng: Rng, distance: number): ObstacleKind {
   const birds = distance > 4000
   const r = rng()
@@ -99,9 +153,10 @@ export function step(s: DinoState, dt: number, ducking: boolean, rng: Rng): Dino
   const obstacles = s.obstacles.map((o) => ({ ...o, x: o.x - dx })).filter((o) => o.x + o.w > -20)
   let nextGap = s.nextGap - dx
   if (nextGap <= 0) {
-    obstacles.push(makeObstacle(spawnKind(rng, s.distance), W + 20))
     // gaps scale with speed so jumps stay possible
-    nextGap = speed * (0.75 + rng() * 0.9)
+    const p = spawnPattern(rng, s.distance, speed, W + 20)
+    obstacles.push(...p.obstacles)
+    nextGap = p.next
   }
   const next: DinoState = { ...s, y, vy, ducking, obstacles, speed, distance: s.distance + dx, nextGap, t: s.t + dt }
   const box = dinoBox(next)
