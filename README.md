@@ -41,9 +41,9 @@ A friends-first browser gaming site: 15 original, fully playable games, guest pr
 | 9 | **Memory Match** | Solo, local 2P; 7/11/15 pairs | Solo, per difficulty, fastest time then fewest moves |
 | 10 | **Tetris Classic** | Solo | Best score, then lines |
 | 11 | **Sudoku Classic** | Easy/medium/hard | Per difficulty, fastest time then fewest mistakes |
-| 12 | **Skater Boy** (inspired) | 90-level campaign (Town / Forest / Cemetery) | Levels completed, then summed best level scores |
+| 12 | **Skater Boy** (inspired) | 90-level campaign (Town / Forest / Cemetery), 3 lives with checkpoints, 3 gems per level | Levels completed, then summed best level scores |
 | 13 | **Typing Racer** | Easy/medium/hard vs 3 rival cars | Per difficulty, WPM then accuracy |
-| 14 | **Chakkar Cubes** (original conveyor-sorting puzzle) | 60 levels, Normal + Admin Mode | None (see below) |
+| 14 | **Chakkar Cubes** (original conveyor-sorting puzzle) | 800 levels, coins and boosters, Normal + Admin Mode | None (see below) |
 | 15 | **Arrow Go** (inspired) | 60 levels | Levels completed, then hearts kept |
 
 Full rules, scoring models and design notes for every game: **[docs/GAMES.md](docs/GAMES.md)**.
@@ -78,7 +78,7 @@ To enable the shared backend, copy `.env.example` to `.env.local`, fill in the t
 | `npm test` | Vitest: unit tests, React integration tests and the database tests (PGlite) |
 | `npm run test:e2e` | Playwright browser tests (builds + previews automatically) |
 | `npm run check:secrets` | Scans `dist/` for service-role keys, PINs and other secrets |
-| `npm run levels:generate` | Regenerates and re-verifies the 60 Loop Sort levels (`src/games/loop-sort/levels.json`) |
+| `npm run levels:generate` | Regenerates and re-verifies the 800 Loop Sort levels (`src/games/loop-sort/levels.json`); takes about 40 minutes |
 
 ## Environment variables
 
@@ -95,7 +95,7 @@ That is all the frontend needs. **Never** put the service-role key, a secret API
 2. **Enable anonymous sign-ins**: *Authentication → Sign In / Providers → "Allow anonymous sign-ins"* → on. Guest players are Supabase anonymous users. Without this, registration fails with a clear message in the UI.
    - Optional: under *Authentication → Attack Protection*, enable CAPTCHA if you ever expect abuse. Anonymous sign-ins are rate limited per IP by Supabase (default 30/hour).
 3. **Run the migrations** in order. Either:
-   - **SQL editor** (simplest): open *SQL Editor*, paste and run each file from `supabase/migrations/` in filename order (`…000001_core_schema.sql` → `…000005_grants.sql`). They are idempotent, so you can re-run them.
+   - **SQL editor** (simplest): open *SQL Editor*, paste and run each file from `supabase/migrations/` in filename order (`20261012000001_core_schema.sql` → `20261027000002_loop_sort_wallet.sql`). They are idempotent, so you can re-run them.
    - **Supabase CLI**:
      ```bash
      npx supabase login
@@ -107,9 +107,9 @@ That is all the frontend needs. **Never** put the service-role key, a secret API
 
 What the migrations create:
 
-- Tables: `players`, `player_code_credentials`, `player_devices`, `games`, `game_sessions`, `game_scores`, `game_progress`, `ludo_match_results`, `loop_sort_progress`, `loop_sort_lives`, `loop_sort_admin_sessions`, `loop_sort_events`, plus `private.settings` and `private.rate_limits`.
+- Tables: `players`, `player_code_credentials`, `player_devices`, `games`, `game_sessions`, `game_scores`, `game_progress`, `ludo_match_results`, `loop_sort_progress`, `loop_sort_lives`, `loop_sort_admin_sessions`, `loop_sort_events`, `loop_sort_wallet`, `loop_sort_wallet_events`, plus `private.settings` and `private.rate_limits`.
 - **RLS is enabled on every table.** API roles get only harmless `SELECT`s (public nicknames and scores; a player's own progress). All writes go through RPC functions; direct `INSERT/UPDATE/DELETE` is revoked.
-- RPC functions (callable with the anon key + the anonymous user's JWT): `register_player`, `me`, `recover_player`, `rename_player`, `rotate_player_code`, `forget_device`, `start_game_session`, `submit_score`, `save_progress`, `get_progress`, `get_leaderboard`, `get_my_leaderboard_position`, `get_my_stats`, `loop_sort_state`, `loop_sort_enter_admin`, `loop_sort_exit_admin`, `loop_sort_select_level`, `loop_sort_apply_events`.
+- RPC functions (callable with the anon key + the anonymous user's JWT): `register_player`, `me`, `recover_player`, `rename_player`, `rotate_player_code`, `forget_device`, `start_game_session`, `submit_score`, `save_progress`, `get_progress`, `get_leaderboard`, `get_my_leaderboard_position`, `get_my_stats`, `loop_sort_state`, `loop_sort_enter_admin`, `loop_sort_exit_admin`, `loop_sort_select_level`, `loop_sort_apply_events`, `loop_sort_wallet`, `loop_sort_wallet_events`.
 - Everything in the `private` schema (settings, rate limits, PIN/pepper helpers) is not callable from the API.
 
 ### Tunables
@@ -155,7 +155,7 @@ Alternatively with the CLI: `npx netlify deploy --build --prod` (after `npx netl
 ## Testing
 
 ```bash
-npm test            # 144 unit + integration + database tests (Vitest)
+npm test            # 198 unit + integration + database tests (Vitest)
 npm run test:e2e    # browser tests on desktop, phone and 320px widths (Playwright)
 npm run lint
 npm run build && npm run check:secrets
@@ -255,10 +255,11 @@ This is a casual site; the browser runs the games, so a determined cheater can a
 
 ## What is verified and what is not
 
-- ✅ Build, type-check and lint pass; 144 Vitest tests and the Playwright suite pass locally (Windows, Edge).
+- ✅ Build and type-check pass, lint reports no errors, and the 198 Vitest tests and 87 Playwright tests pass locally (Windows, Edge).
 - ✅ The SQL migrations run and behave correctly against real Postgres (PGlite) in tests.
-- ⚠️ **Not yet run against a live Supabase project.** No credentials were available while building. The schema targets standard Supabase (`auth.uid()`, `anon`/`authenticated` roles, `extensions.pgcrypto`, anonymous sign-ins), but please do one smoke test after setup: create a profile, finish a game, check its leaderboard, recover on a second browser, and try the admin PIN.
-- ⚠️ Not yet deployed to Netlify (needs your account). Config is in place, and SPA fallback was verified with `vite preview`.
+- ✅ Running on a live Supabase project, including the 800-level and wallet migrations. A scheduled GitHub Action pings it twice a week so the free plan does not pause it.
+- ✅ Deployed on Netlify from `main`: https://bore-hora-hai-yaar.netlify.app. All 15 games were opened and started on the live site on 2026-11-01 at desktop and phone sizes, with database writes blocked.
+- ⚠️ Not covered by that check: a full online pass of profile creation, score saving and code recovery, and testing on every real device.
 
 ## Troubleshooting
 

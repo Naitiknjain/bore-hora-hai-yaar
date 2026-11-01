@@ -39,11 +39,11 @@ Original rules: slide all tiles, equal neighbours merge once per move, a new 2 (
 
 ## 5. Dino Run
 
-Original pixel-free art. Auto-run; jump (Space/↑/tap) over cacti; duck (↓/hold) under mid-height birds; low birds must be jumped and high birds can be run under. Ducking in the air fast-falls. Speed rises from 380 to 960 px/s and obstacle gaps scale with speed. Score = distance / 10.
+Original pixel-free art. Auto-run; jump (Space/↑/tap) over cacti; duck (↓/hold) under mid-height birds; low birds must be jumped and high birds can be run under. Ducking in the air fast-falls. Speed rises from 380 to 960 px/s and obstacle gaps scale with speed. Obstacles are randomised: cactus clusters of different widths, birds from distance 1500, quick doubles after 6000 and occasional breathers. Every gap stays jumpable, which a test autopilot checks. Score = distance / 10.
 
 ## 6. Brick Breaker
 
-Three walls (the third has 2-hit bricks, outlined), 3 lives. Paddle via mouse, drag, ←/→ or touch buttons; Space/click/Launch serves. The paddle hit position sets the bounce angle (up to 60°). Rallies speed up slightly. Ball physics use sub-steps, so the ball never tunnels through bricks. Score = brick points (higher rows are worth more). Win = all walls cleared.
+Three walls (the third has 2-hit bricks, outlined), 3 lives. Paddle via mouse, drag, ←/→ or touch buttons; Space/click/Launch serves. The paddle hit position sets the bounce angle (up to 60°). The ball speeds up slowly over time, up to 30% faster. About 12% of bricks hold a power-up (marked ★) that drops when broken: ×3 balls, a 60% wider paddle for 12 seconds, or a blast that clears a whole row. Ball physics use sub-steps, so the ball never tunnels through bricks. Score = brick points (higher rows are worth more). Win = all walls cleared.
 
 ## 7. Udta Panchi (original flap-and-dodge)
 
@@ -71,11 +71,14 @@ Each puzzle is generated fresh: random solved grid → cells removed in symmetri
 ## 12. Skater Boy (inspired by the classic)
 
 An **original** recreation of the genre, not of the original game's assets or exact levels.
-- 90 levels: Town 1-30, Forest 31-60, Cemetery 61-90, each with its own palette, parallax scenery and obstacles (cones/bins/benches, logs/rocks/stumps, tombstones/coffins/pumpkins).
-- Auto-ride at cruise speed; **Boost** (→/D or hold button) accelerates for long gaps; **Jump** (Space/↑/tap; hold for full height, release early for a short hop); **Trick** (X/↓ in the air) = kickflip, +150 × combo count. Landing while a trick is still spinning is a crash.
+- 90 levels: Town 1-30, Forest 31-60, Cemetery 61-90, each with its own pixel-art scenery and obstacles (cones/bins/benches/rails, logs/rocks/stumps/fallen trees, tombstones/coffins/pumpkins/crypt slabs). All art is drawn in code at 400x200 and scaled up.
+- Auto-ride at cruise speed; **Push** (→/D or hold button) speeds up for long gaps; **Jump** (Space/↑/tap; hold for full height, release early for a short hop). In the air, **Jump** again (or X/↓) does a flip trick worth 150 and **Push** does a 360 spin worth 250; each further trick in the same jump multiplies its points. Points are banked on landing, and landing while a trick is still spinning is a bail.
 - Hazards: gaps, ground obstacles, ramps (automatic launch; jumping on a ramp gives an extra-big pop), raised ledges you must jump onto.
-- Level score = coins × 25 + trick points + 10 per clean landing + 500 for finishing. Best score per level is saved; completing a level unlocks the next.
-- Levels are plain data (`LevelData`: ground segments, obstacles, coins) produced by a deterministic generator with rising difficulty. A test **autopilot finishes all 90 levels**, proving none is impossible. Hand-made levels can be added in the same format.
+- **Grinds:** land on a rail, bench, log, fallen tree, coffin or crypt slab to slide along it for points by distance. Jump to leave early.
+- **Lives:** 3 per run. A bail costs one and restarts you at the last checkpoint flag; at 0 the run ends.
+- **Gems:** 3 per level, in spots reached by a well-timed jump or grind. The best count per level is stored on the device, not on the server.
+- Level score = coins × 25 + gems × 200 + trick points + 10 per clean landing, plus 500 + 100 per life left for finishing, capped at 49,999 (the server limit). Best score per level is saved; completing a level unlocks the next.
+- Levels are plain data (`LevelData`: ground segments, obstacles, coins) produced by a deterministic generator with rising difficulty. A test **autopilot finishes all 90 levels without a bail, from the start and from every checkpoint**, proving none is impossible. Hand-made levels can be added in the same format.
 
 ## 13. Typing Racer
 
@@ -89,7 +92,7 @@ Leaderboard: completed races, per difficulty, WPM then accuracy. The server re-c
 
 ## 14. Chakkar Cubes (internal id `loop-sort`)
 
-An original truck-and-conveyor sorting puzzle. The name, artwork and all 60 level layouts are our own. The general idea is inspired by the conveyor-sorting genre; see `LoopSort_Analysis_Report.md` (outside the repo) for the research. The internal id stays `loop-sort`, so saved progress, links and database rows are unchanged.
+An original truck-and-conveyor sorting puzzle. The name, artwork and all 800 level layouts are our own. The general idea is inspired by the conveyor-sorting genre; see `LoopSort_Analysis_Report.md` (outside the repo) for the research. The internal id stays `loop-sort`, so saved progress, links and database rows are unchanged.
 
 **Rules** (`src/games/loop-sort/logic.ts`, `attempt.ts`):
 - Up to **12 upright trucks** around a portrait conveyor loop, like the reference Level 1. Up to 4 stand side by side inside the loop (fed by the top belt). Bigger levels get a second inside row (fed by the bottom belt) and up to 2 trucks above and 2 below the loop. Conveyor positions are evenly spaced, so cubes move at a constant speed. Each truck holds 4 cubes.
@@ -103,9 +106,10 @@ An original truck-and-conveyor sorting puzzle. The name, artwork and all 60 leve
   - **Use +1 Slot:** the ability can also rescue the screen.
   - **Give Up:** ends the attempt and costs one life through the existing server event (no life in Admin Mode).
 - **No moves left** (nothing can be tapped and waiting cubes have nowhere to go): offers Extra Truck, Undo or Give Up.
-- Hidden cubes from level 6; curtains open once their colour is sorted.
+- Hidden cubes from level 6: a cube stays revealed once uncovered, and same-colour stacks show in full. Curtains (from level 20) open once their colour is sorted.
+- Obstacles arrive in stages: curtain 20, barrier 60, ice 101, lock and key 150, colour tag 201, rope 250, carpet 300, truck queue 350, screws 400. A card explains each one the first time.
 
-**Abilities:** Normal Mode gives 2 uses each per level; Admin Mode is unlimited. Admin still can't exceed 12 trucks or a conveyor larger than the loop.
+**Abilities:** Normal Mode spends boosters from a wallet kept on the server. Players start with 500 coins and 2 of each booster, and earn 10, 30 or 50 coins per newly finished level (normal, hard, super). With no booster left, Undo and Shuffle cost 300 coins, +1 Slot 800 and Extra Truck 900. Admin Mode is unlimited. Admin still can't exceed 12 trucks or a conveyor larger than the loop.
 
 | Ability | Effect |
 |---|---|
@@ -116,7 +120,7 @@ An original truck-and-conveyor sorting puzzle. The name, artwork and all 60 leve
 
 **Tuning:** `src/games/loop-sort/config.ts` holds the loss trigger (`'tap-exceeds-capacity'`, or the legacy `'jammed'`), ability counts, continues per attempt, slots per continue or ability, and the max trucks.
 
-**Levels:** 60 original levels from `npm run levels:generate`. They grow from 2 to 8 colours and from 3 to 10 trucks, and conveyor capacity shrinks from 8 to 5. Each is solved by a best-first solver and shipped with its solution, which the tests replay.
+**Levels:** 800 original levels from `npm run levels:generate`, shown in pages of 40. They use up to 8 colours and 10 trucks, with conveyor capacity between 8 and 4. Each is solved by a best-first solver and shipped with its solution, which the tests replay.
 
 **Lives & modes:** unchanged.
 - Normal Mode: lives on the server clock; you can't play at 0 lives.
@@ -133,6 +137,6 @@ The link in the brief (`com.oakever.arrows`) currently resolves to **"Amaze GO!"
 - A blocked tap shakes the arrow, flashes the blocker red and costs a ❤️ (3 per level). At 0 hearts the level fails.
 - Removing every arrow completes the level. The completion overlay shows hearts kept and time, with Next / Replay / Levels.
 - Guidance toggle draws every arrow's exit lane; 3 hints per level highlight an arrow that can leave now.
-- 60 original levels from a deterministic generator with increasing board size, arrow length and ordering depth. A level is solvable iff greedy removal clears it (removal only frees lanes); every level is verified in tests.
+- 60 original levels from a deterministic generator with increasing board size, arrow length and ordering depth. A long search (`npx vite-node scripts/generate-arrow-levels.ts`) makes later boards harder, with fewer free arrows at the start and more removal rounds, and the results ship in `src/games/arrow-go/levels.json`. A level is solvable iff greedy removal clears it (removal only frees lanes); every level is verified in tests.
 
 **Remaining uncertainty:** the original's exact level data, timer rules and star system are unknown, so ours uses an elapsed-time display and hearts-kept as the per-level score.
